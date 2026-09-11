@@ -1,0 +1,1 @@
+{"image":"content.svg","tileWidth":2,"tileHeight":2,"count":4,"columns":2,"spacing":1,"padding":1,"terrains":[{"name":"floor"}],"tiles":{"floor_nw":{"index":0,"kind":"floor","collision":[[0,0],[2,0]],"corners":[1,0,0,1]},"floor_se":{"index":3,"kind":"floor","terrain":"floor"}}}

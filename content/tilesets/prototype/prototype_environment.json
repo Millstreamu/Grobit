@@ -1,0 +1,73 @@
+{
+  "image": "untitled-tileset.png",
+  "tileWidth": 32,
+  "tileHeight": 32,
+  "count": 6,
+  "columns": 4,
+  "spacing": 0,
+  "padding": 0,
+  "terrains": [
+    "floor",
+    "wall"
+  ],
+  "tiles": {
+    "floor_clean": {
+      "index": 0,
+      "kind": "terrain",
+      "corners": [
+        "floor",
+        "floor",
+        "floor",
+        "floor"
+      ]
+    },
+    "floor_damaged": {
+      "index": 1,
+      "kind": "terrain",
+      "corners": [
+        "floor",
+        "floor",
+        "floor",
+        "floor"
+      ]
+    },
+    "wall": {
+      "index": 2,
+      "kind": "terrain",
+      "corners": [
+        "wall",
+        "wall",
+        "wall",
+        "wall"
+      ],
+      "collision": true
+    },
+    "wall_damaged": {
+      "index": 3,
+      "kind": "terrain",
+      "corners": [
+        "wall",
+        "wall",
+        "wall",
+        "wall"
+      ],
+      "collision": true
+    },
+    "door_closed": {
+      "index": 4,
+      "kind": "decor",
+      "collision": true,
+      "tags": [
+        "door"
+      ]
+    },
+    "door_open": {
+      "index": 5,
+      "kind": "decor",
+      "collision": true,
+      "tags": [
+        "door"
+      ]
+    }
+  }
+}
