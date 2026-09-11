@@ -1,0 +1,6 @@
+# Godot editor/import cache
+.godot/
+
+# Python validation artifacts
+__pycache__/
+*.py[cod]
