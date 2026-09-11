@@ -1,0 +1,62 @@
+{
+  "image": "untitled-atlas.png",
+  "width": 64,
+  "height": 48,
+  "count": 5,
+  "padding": 0,
+  "spacing": 0,
+  "sprites": {
+    "grobit": {
+      "x": 0,
+      "y": 0,
+      "w": 32,
+      "h": 32,
+      "kind": "prop",
+      "collision": true,
+      "tags": [
+        "player"
+      ]
+    },
+    "enemy_basic": {
+      "x": 32,
+      "y": 0,
+      "w": 32,
+      "h": 32,
+      "kind": "prop",
+      "collision": true,
+      "tags": [
+        "enemy"
+      ]
+    },
+    "scrap_metal": {
+      "x": 0,
+      "y": 32,
+      "w": 16,
+      "h": 16,
+      "kind": "prop",
+      "tags": [
+        "resources"
+      ]
+    },
+    "electronics": {
+      "x": 16,
+      "y": 32,
+      "w": 16,
+      "h": 16,
+      "kind": "prop",
+      "tags": [
+        "resources"
+      ]
+    },
+    "raw_material": {
+      "x": 32,
+      "y": 32,
+      "w": 16,
+      "h": 16,
+      "kind": "prop",
+      "tags": [
+        "resources"
+      ]
+    }
+  }
+}
