@@ -1,14 +1,14 @@
 # Grobit
 
 Grobit is a Godot 4 project for a real-time, top-down pixel-art game. This
-repository currently contains only the project skeleton and content-pipeline
-conventions; gameplay has not yet been implemented.
+repository includes an initial smooth-movement prototype backed by the external
+content pipeline.
 
 ## Open the project
 
 1. Install Godot 4.x.
 2. Import or open `project.godot` from the Godot Project Manager.
-3. Run the project to launch the temporary `content_test.tscn` main scene.
+3. Run the project to launch `movement_test.tscn` and move Grobit with WASD.
 
 See [`docs/CONTENT_PIPELINE.md`](docs/CONTENT_PIPELINE.md) before adding exported
 artwork.
@@ -30,4 +30,5 @@ the checked-in prototype artwork with:
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tests/content_loader_test.gd
+godot --headless --path . --script tests/movement_test.gd
 ```

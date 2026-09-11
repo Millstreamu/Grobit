@@ -39,7 +39,7 @@ class ProjectStructureTests(unittest.TestCase):
     def test_main_scene_exists_and_is_configured(self):
         config = load_project_config()
         main_scene = config["application"]["run/main_scene"].strip('"')
-        self.assertEqual(main_scene, "res://scenes/test/content_test.tscn")
+        self.assertEqual(main_scene, "res://scenes/test/movement_test.tscn")
         self.assertTrue((ROOT / main_scene.removeprefix("res://")).is_file())
 
     def test_canvas_textures_default_to_nearest_filtering(self):
@@ -63,6 +63,22 @@ class ProjectStructureTests(unittest.TestCase):
         self.assertIn('path="res://scripts/content/content_test.gd"', scene)
         self.assertIn('name="AtlasGrid"', scene)
         self.assertIn('name="TilesetGrid"', scene)
+
+    def test_movement_prototype_files_and_controls_exist(self):
+        expected_files = (
+            "scenes/player/grobit.tscn",
+            "scenes/test/movement_test.tscn",
+            "scripts/player/grobit.gd",
+            "scripts/world/movement_test.gd",
+        )
+        for relative_path in expected_files:
+            with self.subTest(path=relative_path):
+                self.assertTrue((ROOT / relative_path).is_file())
+
+        config = load_project_config()
+        for action in ("move_up", "move_down", "move_left", "move_right"):
+            with self.subTest(action=action):
+                self.assertIn(action, config["input"])
 
 if __name__ == "__main__":
     unittest.main()
