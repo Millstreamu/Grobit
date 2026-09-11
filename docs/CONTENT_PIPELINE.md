@@ -41,6 +41,11 @@ exported pair remains portable as long as both files stay together. The test
 scene automatically loads the alphabetically first JSON file in each prototype
 directory and displays every named entry.
 
+The loader normally uses the JSON `image` value. If an exported JSON/PNG pair
+was renamed afterward and that value no longer exists, it also accepts a PNG
+whose basename matches the JSON file and emits a warning describing the
+mismatch. This keeps renamed exports usable without changing their metadata.
+
 Atlas `sprites` are expected to be an object keyed by sprite name. Tilesets may
 represent `tiles` either as an object keyed by tile name or as an array whose
 entries contain `name`; an unnamed array entry falls back to its index as its

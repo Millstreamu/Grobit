@@ -19,7 +19,9 @@ func load_json(json_path: String) -> bool:
 
 	if not document.has("image") or not document.image is String or document.image.is_empty():
 		return _fail("Atlas JSON '%s' is missing a non-empty 'image' field." % json_path)
-	image_path = json_path.get_base_dir().path_join(document.image)
+	image_path = _resolve_image_path(json_path, document.image)
+	if image_path.is_empty():
+		return false
 	texture = load(image_path) as Texture2D
 	if texture == null:
 		return _fail("Atlas PNG '%s' referenced by '%s' could not be loaded." % [image_path, json_path])
@@ -90,6 +92,24 @@ func _read_document(json_path: String) -> Dictionary:
 		_fail("Atlas JSON '%s' must contain an object at its root." % json_path)
 		return {}
 	return json.data
+
+
+func _resolve_image_path(json_path: String, exported_name: String) -> String:
+	var directory_path := json_path.get_base_dir()
+	var referenced_path := directory_path.path_join(exported_name)
+	if FileAccess.file_exists(referenced_path):
+		return referenced_path
+
+	# Artists commonly rename an exported pair after export without changing the
+	# image value in the JSON. Prefer the PNG matching the JSON basename in that
+	# case, while still making the mismatch visible in the output.
+	var renamed_pair_path := json_path.get_basename() + ".png"
+	if FileAccess.file_exists(renamed_pair_path):
+		push_warning("Atlas JSON '%s' references missing image '%s'; using matching PNG '%s'." % [json_path, exported_name, renamed_pair_path])
+		return renamed_pair_path
+
+	_fail("Atlas PNG '%s' referenced by '%s' does not exist. Expected the referenced file or '%s'." % [referenced_path, json_path, renamed_pair_path])
+	return ""
 
 
 func _clear() -> void:

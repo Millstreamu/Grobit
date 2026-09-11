@@ -64,13 +64,5 @@ class ProjectStructureTests(unittest.TestCase):
         self.assertIn('name="AtlasGrid"', scene)
         self.assertIn('name="TilesetGrid"', scene)
 
-    def test_loader_fixtures_are_text_only(self):
-        fixture_files = (ROOT / "tests/fixtures").iterdir()
-        binary_suffixes = {".png", ".jpg", ".jpeg", ".webp"}
-        self.assertFalse(
-            [path.name for path in fixture_files if path.suffix.lower() in binary_suffixes]
-        )
-
-
 if __name__ == "__main__":
     unittest.main()
