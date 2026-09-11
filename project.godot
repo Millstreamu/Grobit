@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Grobit"
-run/main_scene="res://scenes/test/movement_test.tscn"
+run/main_scene="res://scenes/test/combat_test.tscn"
 config/features=PackedStringArray("4.4")
 
 [display]
@@ -28,6 +28,7 @@ move_up={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":87)
 move_down={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":83)]}
 move_left={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":65)]}
 move_right={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":68)]}
+attack={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":32), Object(InputEventMouseButton,"button_index":1)]}
 
 [rendering]
 
