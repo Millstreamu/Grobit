@@ -33,6 +33,27 @@ Both files in a pair should have the same base filename. Treat exported atlas
 JSON as source data rather than manually duplicating its sprite regions inside
 Godot.
 
+## Runtime loading
+
+`AtlasContent` and `TilesetContent` in `res://scripts/content/` load the export
+metadata directly. Image paths are resolved relative to the JSON file, so an
+exported pair remains portable as long as both files stay together. The test
+scene automatically loads the alphabetically first JSON file in each prototype
+directory and displays every named entry.
+
+The loader normally uses the JSON `image` value. If an exported JSON/PNG pair
+was renamed afterward and that value no longer exists, it also accepts a PNG
+whose basename matches the JSON file and emits a warning describing the
+mismatch. This keeps renamed exports usable without changing their metadata.
+
+Atlas `sprites` are expected to be an object keyed by sprite name. Tilesets may
+represent `tiles` either as an object keyed by tile name or as an array whose
+entries contain `name`; an unnamed array entry falls back to its index as its
+debug name. Tile indices are zero-based and advance left-to-right, then
+top-to-bottom. `padding` is the outer image inset on every side and `spacing` is
+the gap between adjacent tiles. All tile fields are retained, including terrain,
+corner, and collision fields, without interpreting them as gameplay data.
+
 ## Artwork metadata and game data
 
 Keep gameplay data separate from artwork metadata wherever practical. An atlas

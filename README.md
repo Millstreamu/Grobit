@@ -23,3 +23,11 @@ dependency-install entry point for automated environments.
 python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 ```
+
+When a Godot 4 executable is available, validate the GDScript loaders against
+the checked-in prototype artwork with:
+
+```bash
+godot --headless --path . --import
+godot --headless --path . --script tests/content_loader_test.gd
+```

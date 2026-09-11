@@ -49,6 +49,20 @@ class ProjectStructureTests(unittest.TestCase):
             "0",
         )
 
+    def test_external_content_loaders_and_debug_scene_exist(self):
+        expected_scripts = (
+            "scripts/content/atlas_content.gd",
+            "scripts/content/tileset_content.gd",
+            "scripts/content/content_test.gd",
+        )
+        for relative_path in expected_scripts:
+            with self.subTest(path=relative_path):
+                self.assertTrue((ROOT / relative_path).is_file())
+
+        scene = (ROOT / "scenes/test/content_test.tscn").read_text()
+        self.assertIn('path="res://scripts/content/content_test.gd"', scene)
+        self.assertIn('name="AtlasGrid"', scene)
+        self.assertIn('name="TilesetGrid"', scene)
 
 if __name__ == "__main__":
     unittest.main()
