@@ -15,6 +15,7 @@ const SPRITE_NAME := "grobit"
 
 
 func _ready() -> void:
+	add_to_group("player")
 	var atlas := AtlasContent.new()
 	if not atlas.load_json(ATLAS_PATH):
 		push_error("Grobit cannot load its prototype atlas: %s" % atlas.last_error)
