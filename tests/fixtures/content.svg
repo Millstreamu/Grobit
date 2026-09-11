@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8">
+  <!-- Text-based fixture: avoids requiring binary artwork in the repository. -->
+  <rect width="8" height="8" fill="#1b1f2a"/>
+  <rect x="1" y="1" width="2" height="2" fill="#f2c14e"/>
+  <rect x="4" y="1" width="2" height="2" fill="#e05d5d"/>
+  <rect x="1" y="4" width="2" height="2" fill="#57b894"/>
+  <rect x="4" y="4" width="2" height="2" fill="#5a8dee"/>
+</svg>
