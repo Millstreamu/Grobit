@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://5n5jus446oty"
-path="res://.godot/imported/content.svg-9c91f42020f236cfd85659615f2fb2e6.ctex"
+uid="uid://pfukwsengwc"
+path="res://.godot/imported/prototype_atlas.png-f3624599ff5e600c5f590f633fd6d6b9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://tests/fixtures/content.svg"
-dest_files=["res://.godot/imported/content.svg-9c91f42020f236cfd85659615f2fb2e6.ctex"]
+source_file="res://content/atlases/prototype/prototype_atlas.png"
+dest_files=["res://.godot/imported/prototype_atlas.png-f3624599ff5e600c5f590f633fd6d6b9.ctex"]
 
 [params]
 
@@ -32,6 +32,3 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
-svg/scale=1.0
-editor/scale_with_editor_scale=false
-editor/convert_colors_with_editor_theme=false

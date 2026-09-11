@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://5n5jus446oty"
-path="res://.godot/imported/content.svg-9c91f42020f236cfd85659615f2fb2e6.ctex"
+uid="uid://d3ihh75if8geo"
+path="res://.godot/imported/prototype_environment.png-473bc9fe0993d2fb4f28ea0831a6e8bd.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://tests/fixtures/content.svg"
-dest_files=["res://.godot/imported/content.svg-9c91f42020f236cfd85659615f2fb2e6.ctex"]
+source_file="res://content/tilesets/prototype/prototype_environment.png"
+dest_files=["res://.godot/imported/prototype_environment.png-473bc9fe0993d2fb4f28ea0831a6e8bd.ctex"]
 
 [params]
 
@@ -32,6 +32,3 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
-svg/scale=1.0
-editor/scale_with_editor_scale=false
-editor/convert_colors_with_editor_theme=false

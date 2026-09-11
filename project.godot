@@ -3,8 +3,8 @@
 ; since the parameters that go here are not all obvious.
 ;
 ; Format:
-;   [section]
-;   param=value
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
 
@@ -12,6 +12,7 @@ config_version=5
 
 config/name="Grobit"
 run/main_scene="res://scenes/test/content_test.tscn"
+config/features=PackedStringArray("4.4")
 
 [display]
 
@@ -19,7 +20,6 @@ window/stretch/mode="canvas_items"
 
 [rendering]
 
+textures/canvas_textures/default_texture_filter=0
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-textures/canvas_textures/default_texture_filter=0
-textures/default_filters/use_nearest_mipmap_filter=false
