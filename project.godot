@@ -11,12 +11,23 @@ config_version=5
 [application]
 
 config/name="Grobit"
-run/main_scene="res://scenes/test/content_test.tscn"
+run/main_scene="res://scenes/test/movement_test.tscn"
 config/features=PackedStringArray("4.4")
 
 [display]
 
+window/size/viewport_width=640
+window/size/viewport_height=448
+window/size/window_width_override=960
+window/size/window_height_override=672
 window/stretch/mode="canvas_items"
+
+[input]
+
+move_up={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":87)]}
+move_down={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":83)]}
+move_left={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":65)]}
+move_right={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":68)]}
 
 [rendering]
 
