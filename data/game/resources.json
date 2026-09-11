@@ -1,0 +1,11 @@
+{
+  "_comment": "Gameplay resource definitions. 'icon' is an atlas sprite id (see content/atlases). Missing icons fall back to a generated placeholder and are reported at runtime.",
+  "resources": {
+    "raw_scrap": { "name": "Raw Scrap", "icon": "raw_material", "color": "8a7f6d" },
+    "metal": { "name": "Metal", "icon": "scrap_metal", "color": "b9c2cc" },
+    "electronics": { "name": "Electronics", "icon": "electronics", "color": "4fae6b" },
+    "power_cell": { "name": "Power Cell", "icon": "power_cell", "color": "e0b23a" },
+    "circuit_board": { "name": "Circuit Board", "icon": "circuit_board", "color": "2f8f6f" },
+    "tech_data": { "name": "Tech Data", "icon": "tech_data", "color": "5aa9e6" }
+  }
+}

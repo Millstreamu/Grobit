@@ -8,11 +8,39 @@ by the external content pipeline.
 
 1. Install Godot 4.x.
 2. Import or open `project.godot` from the Godot Project Manager.
-3. Run the project to launch `combat_test.tscn`. Move Grobit with WASD and use
-   Space or the left mouse button to fire at the nearest enemy in range.
+3. Run the project to launch `scenes/world/run.tscn` — a rough playable slice of
+   the full prototype loop (generated area, combat, salvage, recycling,
+   manufacturing, building, extraction and the Power Generator objective).
 
-See [`docs/CONTENT_PIPELINE.md`](docs/CONTENT_PIPELINE.md) before adding exported
+`scenes/test/combat_test.tscn` and the other test scenes are kept for isolated
+checks of individual systems.
+
+See [`docs/MASTER_PROTOTYPE_DIRECTION.md`](docs/MASTER_PROTOTYPE_DIRECTION.md) for
+the design direction and [`docs/ARTWORK_NEEDED.md`](docs/ARTWORK_NEEDED.md) for the
+list of missing sprites (the game runs with placeholders until they exist). See
+[`docs/CONTENT_PIPELINE.md`](docs/CONTENT_PIPELINE.md) before adding exported
 artwork.
+
+## Controls
+
+| Input | Action |
+| --- | --- |
+| WASD | Move |
+| Space / Left mouse | Shoot (auto-targets nearest enemy) |
+| E / Q / R | EMP / Shield / Regen abilities |
+| I | Toggle inventory |
+| M | Toggle manufacturing panel (number keys build recipes) |
+| B | Toggle build mode (1/2 select, left click place, B/Esc exit) |
+| F | Interact (repair generator, extract) |
+| Enter | Start a new run from the summary screen |
+
+## Systems overview
+
+Data-driven definitions live in `data/game/` (resources, recyclers, recipes,
+buildables, tech, area). Global state is split into three autoloads:
+`ContentLibrary` (art + placeholders), `GameData` (definitions), `RunState`
+(per-run data) and `MetaState` (permanent tech progression, saved to `user://`).
+The run itself is orchestrated by `scripts/world/run_controller.gd`.
 
 ## Validation
 

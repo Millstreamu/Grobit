@@ -1,0 +1,14 @@
+{
+  "_comment": "Recyclers auto-convert a raw/common material into a processed material over time while installed. 'seconds' is per single conversion.",
+  "recyclers": {
+    "scrap_recycler": {
+      "name": "Scrap Recycler",
+      "icon": "scrap_metal",
+      "input": "raw_scrap",
+      "input_amount": 2,
+      "output": "metal",
+      "output_amount": 1,
+      "seconds": 3.0
+    }
+  }
+}

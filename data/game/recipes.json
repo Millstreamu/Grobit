@@ -1,0 +1,21 @@
+{
+  "_comment": "Manufacturing recipes: use processed materials to build specific components. Player-triggered, produced over 'seconds'.",
+  "recipes": {
+    "power_cell": {
+      "name": "Power Cell",
+      "icon": "power_cell",
+      "inputs": { "metal": 2, "electronics": 1 },
+      "output": "power_cell",
+      "output_amount": 1,
+      "seconds": 4.0
+    },
+    "circuit_board": {
+      "name": "Circuit Board",
+      "icon": "circuit_board",
+      "inputs": { "metal": 1, "electronics": 2 },
+      "output": "circuit_board",
+      "output_amount": 1,
+      "seconds": 4.0
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "_comment": "Area definition. Keeps one area's specifics out of gameplay code so more areas are easy to add later.",
+  "areas": {
+    "derelict_foundry": {
+      "name": "Derelict Foundry",
+      "tileset": "res://content/tilesets/prototype/prototype_environment.json",
+      "floor_tile": "floor_clean",
+      "wall_tile": "wall",
+      "door_closed_tile": "door_closed",
+      "door_open_tile": "door_open",
+      "enemies": ["basic_enemy"],
+      "start_recyclers": ["scrap_recycler"],
+      "generation": {
+        "room_count": 6,
+        "min_enemies": 2,
+        "max_enemies": 4
+      },
+      "resource_drops": {
+        "basic_enemy": [
+          { "resource": "raw_scrap", "min": 1, "max": 2, "chance": 1.0 },
+          { "resource": "electronics", "min": 1, "max": 1, "chance": 0.35 },
+          { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.15 }
+        ]
+      },
+      "objective": {
+        "type": "power_generator",
+        "name": "Power Generator",
+        "requires": { "power_cell": 2, "circuit_board": 1 }
+      }
+    }
+  }
+}

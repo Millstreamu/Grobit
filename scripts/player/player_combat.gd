@@ -1,5 +1,6 @@
 class_name PlayerCombat
 extends Node
+## Grobit's Shoot ability: auto-targets and fires at the nearest enemy in range.
 
 const PROJECTILE_SCENE := preload("res://scenes/combat/projectile.tscn")
 
@@ -14,8 +15,16 @@ var _cooldown_remaining := 0.0
 
 func _process(delta: float) -> void:
 	_cooldown_remaining = maxf(_cooldown_remaining - delta, 0.0)
+	if not _can_act():
+		return
 	if Input.is_action_pressed("attack"):
 		attack_nearest()
+
+
+func cooldown_ratio() -> float:
+	if cooldown <= 0.0:
+		return 0.0
+	return _cooldown_remaining / cooldown
 
 
 func attack_nearest() -> bool:
@@ -34,6 +43,16 @@ func attack_nearest() -> bool:
 		world = get_parent().get_parent()
 	world.add_child(projectile)
 	_cooldown_remaining = cooldown
+	return true
+
+
+func _can_act() -> bool:
+	var grobit := get_parent() as GrobitPlayer
+	if grobit != null and (grobit.health == null or grobit.health.is_dead()):
+		return false
+	for bm: Node in get_tree().get_nodes_in_group("build_manager"):
+		if bm.has_method("is_build_active") and bm.is_build_active():
+			return false
 	return true
 
 

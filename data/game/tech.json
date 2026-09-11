@@ -1,0 +1,33 @@
+{
+  "_comment": "Permanent tech unlocks bought with extracted tech_data. 'effect'/'value' are read by systems that apply meta modifiers.",
+  "tech": {
+    "improved_recycler": {
+      "name": "Improved Recycler",
+      "cost": 2,
+      "effect": "recycler_speed",
+      "value": 1.0,
+      "desc": "Recyclers process 2x faster."
+    },
+    "move_speed": {
+      "name": "Servo Legs",
+      "cost": 1,
+      "effect": "move_speed",
+      "value": 1.25,
+      "desc": "+25% movement speed."
+    },
+    "max_health": {
+      "name": "Reinforced Chassis",
+      "cost": 1,
+      "effect": "max_health",
+      "value": 5,
+      "desc": "+5 maximum health."
+    },
+    "extra_recycler_slot": {
+      "name": "Modular Bay",
+      "cost": 3,
+      "effect": "recycler_slots",
+      "value": 1,
+      "desc": "+1 recycler slot."
+    }
+  }
+}

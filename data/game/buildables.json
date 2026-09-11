@@ -1,0 +1,18 @@
+{
+  "_comment": "Things Grobit can construct during a run. 'cost' is spent from the run inventory on placement.",
+  "buildables": {
+    "respawn_beacon": {
+      "name": "Respawn Beacon",
+      "icon": "respawn_beacon",
+      "color": "3ad6a2",
+      "cost": { "metal": 3 },
+      "uses": 2
+    },
+    "extraction_beacon": {
+      "name": "Extraction Beacon",
+      "icon": "extraction_beacon",
+      "color": "e6a13a",
+      "cost": { "metal": 5, "electronics": 2 }
+    }
+  }
+}

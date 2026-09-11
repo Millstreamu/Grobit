@@ -1,15 +1,27 @@
 import configparser
+import re
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
+_SECTION_RE = re.compile(r"^\[.+\]\s*$")
+_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_/.]*=")
+
 
 def load_project_config():
-    config = configparser.ConfigParser()
-    # Godot's top-level config_version entry precedes its INI-style sections.
-    config.read_string("[project]\n" + (ROOT / "project.godot").read_text())
+    # Godot serialises input actions as multi-line inline dicts (containing bare
+    # "]"/"}" lines and repeated "deadzone" keys) that a plain INI parser rejects.
+    # Keep only section headers and top-level `key=` lines; that preserves every
+    # section plus each action's `name={` line, which is all these tests inspect.
+    kept = ["[project]"]  # top-level entries precede the first real section
+    for line in (ROOT / "project.godot").read_text().splitlines():
+        if _SECTION_RE.match(line) or _KEY_RE.match(line):
+            kept.append(line)
+    config = configparser.ConfigParser(strict=False)
+    config.optionxform = str  # preserve case (e.g. autoload "ContentLibrary")
+    config.read_string("\n".join(kept))
     return config
 
 
@@ -39,8 +51,71 @@ class ProjectStructureTests(unittest.TestCase):
     def test_main_scene_exists_and_is_configured(self):
         config = load_project_config()
         main_scene = config["application"]["run/main_scene"].strip('"')
-        self.assertEqual(main_scene, "res://scenes/test/combat_test.tscn")
+        self.assertEqual(main_scene, "res://scenes/world/run.tscn")
         self.assertTrue((ROOT / main_scene.removeprefix("res://")).is_file())
+
+    def test_core_autoloads_are_registered(self):
+        config = load_project_config()
+        self.assertIn("autoload", config)
+        for singleton in ("ContentLibrary", "GameData", "MetaState", "RunState"):
+            with self.subTest(autoload=singleton):
+                self.assertIn(singleton, config["autoload"])
+
+    def test_prototype_gameplay_data_files_exist(self):
+        import json
+
+        for name in (
+            "resources.json",
+            "recyclers.json",
+            "recipes.json",
+            "buildables.json",
+            "tech.json",
+            "area.json",
+        ):
+            path = ROOT / "data" / "game" / name
+            with self.subTest(data_file=name):
+                self.assertTrue(path.is_file())
+                # Every gameplay data file must be valid JSON.
+                json.loads(path.read_text())
+
+    def test_prototype_system_scripts_exist(self):
+        expected = (
+            "scripts/core/content_library.gd",
+            "scripts/core/game_data.gd",
+            "scripts/core/run_state.gd",
+            "scripts/core/meta_state.gd",
+            "scripts/core/health_component.gd",
+            "scripts/player/grobit_abilities.gd",
+            "scripts/world/door.gd",
+            "scripts/world/room.gd",
+            "scripts/world/area_generator.gd",
+            "scripts/world/run_controller.gd",
+            "scripts/build/build_manager.gd",
+            "scripts/build/respawn_beacon.gd",
+            "scripts/build/extraction_beacon.gd",
+            "scripts/machines/recycler_system.gd",
+            "scripts/machines/manufacturing.gd",
+            "scripts/machines/power_generator.gd",
+            "scripts/ui/hud.gd",
+        )
+        for relative_path in expected:
+            with self.subTest(path=relative_path):
+                self.assertTrue((ROOT / relative_path).is_file())
+
+    def test_new_input_actions_exist(self):
+        config = load_project_config()
+        for action in (
+            "ability_emp",
+            "ability_shield",
+            "ability_regen",
+            "toggle_inventory",
+            "toggle_build",
+            "toggle_manufacture",
+            "interact",
+            "hotbar_1",
+        ):
+            with self.subTest(action=action):
+                self.assertIn(action, config["input"])
 
     def test_canvas_textures_default_to_nearest_filtering(self):
         config = load_project_config()
