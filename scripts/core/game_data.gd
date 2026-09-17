@@ -12,6 +12,8 @@ var recyclers: Dictionary = {}
 var recipes: Dictionary = {}
 var buildables: Dictionary = {}
 var tech: Dictionary = {}
+var enemies: Dictionary = {}
+var abilities: Dictionary = {}
 var areas: Dictionary = {}
 
 
@@ -21,6 +23,8 @@ func _ready() -> void:
 	recipes = _load("recipes.json").get("recipes", {})
 	buildables = _load("buildables.json").get("buildables", {})
 	tech = _load("tech.json").get("tech", {})
+	enemies = _load("enemies.json").get("enemies", {})
+	abilities = _load("abilities.json").get("abilities", {})
 	areas = _load("area.json").get("areas", {})
 
 

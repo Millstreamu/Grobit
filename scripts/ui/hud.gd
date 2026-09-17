@@ -20,30 +20,44 @@ var _hp_label: Label
 var _prompt: Label
 var _messages: Array = []
 
-var _inventory_panel: Control
-var _inventory_list: VBoxContainer
-var _manufacture_panel: Control
-var _manufacture_label: Label
+var _minimap: Minimap
+var _inventory: InventoryPanel
+var _manufacture: ManufacturePanel
+var _ability_choice: AbilityChoicePanel
 var _summary_panel: Control
 var _summary_label: Label
 
 
-func setup(player: GrobitPlayer, recyclers: RecyclerSystem, manufacturing: Manufacturing, build: BuildManager) -> void:
+func setup(player: GrobitPlayer, recyclers: RecyclerSystem, manufacturing: Manufacturing, build: BuildManager, generator: AreaGenerator) -> void:
 	_player = player
 	_combat = player.get_node("Combat") as PlayerCombat
 	_abilities = player.get_node("Abilities") as GrobitAbilities
 	_recyclers = recyclers
 	_manufacturing = manufacturing
 	_build = build
-	RunState.inventory_changed.connect(_on_inventory_changed)
+	_minimap = Minimap.new()
+	_minimap.position = Vector2(490, 6)
+	add_child(_minimap)
+	_minimap.configure(generator)
 	if _player.health != null:
 		_player.health.health_changed.connect(_on_health_changed)
 		_on_health_changed(_player.health.health, _player.health.max_health)
-	_rebuild_inventory()
+	# Choose the run's active ability up front if one isn't equipped yet.
+	if RunState.equipped_ability.is_empty():
+		if OS.has_environment("GROBIT_DEBUG_ABILITY"):  # skip the modal in headless tests
+			var aid := OS.get_environment("GROBIT_DEBUG_ABILITY")
+			if not GameData.abilities.has(aid) and not RunState.available_abilities.is_empty():
+				aid = RunState.available_abilities[0]
+			RunState.equipped_ability = aid
+			if not aid.is_empty():
+				_abilities.equip(aid)
+		else:
+			_ability_choice.open()
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("hud")
 	_build_ui()
 
 
@@ -52,10 +66,10 @@ func _process(_delta: float) -> void:
 		return
 	_status.text = _status_text()
 	_prompt.text = _interaction_prompt()
-	if _manufacture_panel.visible:
-		_manufacture_label.text = _manufacture_text()
 	if _summary_panel.visible:
 		_summary_label.text = _summary_text()
+	if _minimap != null:
+		_minimap.visible = not (_inventory.is_open() or _manufacture.is_open() or _ability_choice.is_open())
 	_handle_toggles()
 
 
@@ -68,6 +82,8 @@ func log_message(text: String) -> void:
 # --------------------------------------------------------------- input ----
 
 func _handle_toggles() -> void:
+	if _ability_choice.is_open():
+		return  # run-start ability choice owns input until confirmed
 	if _summary_panel.visible:
 		if Input.is_action_just_pressed("confirm"):
 			var controller := get_parent() as RunController
@@ -79,19 +95,22 @@ func _handle_toggles() -> void:
 				_try_unlock_tech(i)
 		return
 
+	# Inventory and manufacturing are full-screen modals; only one open at a time,
+	# each owns input (and closes with its own key) while open.
+	if _inventory.is_open():
+		if Input.is_action_just_pressed("toggle_inventory"):
+			_inventory.close()
+		return
+	if _manufacture.is_open():
+		if Input.is_action_just_pressed("toggle_manufacture"):
+			_manufacture.close()
+		return
 	if Input.is_action_just_pressed("toggle_inventory"):
-		_inventory_panel.visible = not _inventory_panel.visible
-		if _inventory_panel.visible:
-			_rebuild_inventory()
+		_inventory.open()
+		return
 	if Input.is_action_just_pressed("toggle_manufacture"):
-		_manufacture_panel.visible = not _manufacture_panel.visible
-	# Crafting hotkeys only while the manufacturing panel is open and not building.
-	if _manufacture_panel.visible and not _build.is_build_active():
-		var recipe_ids: Array = GameData.recipes.keys()
-		for i in mini(4, recipe_ids.size()):
-			if Input.is_action_just_pressed("hotbar_%d" % (i + 1)):
-				if not _manufacturing.start(recipe_ids[i]):
-					log_message("Not enough materials for %s." % GameData.recipes[recipe_ids[i]].get("name", recipe_ids[i]))
+		_manufacture.open()
+		return
 
 
 func _try_unlock_tech(index: int) -> void:
@@ -117,10 +136,12 @@ func _locked_tech_ids() -> Array:
 
 func _status_text() -> String:
 	var lines: Array = []
-	lines.append("Abilities:  " + _ability_text())
+	lines.append("Ability:  " + _ability_text())
 	for state: Dictionary in _recyclers.states():
-		var suffix := "%d%%" % int(state.ratio * 100.0) if state.active else "idle (need %s)" % GameData.resource_name(state.input)
-		lines.append("Recycler: %s -> %s  %s" % [GameData.resource_name(state.input), GameData.resource_name(state.output), suffix])
+		var suffix := "buffer %d/%d" % [state.buffer, state.input_amount]
+		if state.working:
+			suffix += "  %d%%" % int(state.ratio * 100.0)
+		lines.append("Recycler: %s -> %s  (%s)" % [GameData.resource_name(state.input), GameData.resource_name(state.output), suffix])
 	if not _manufacturing.current_recipe().is_empty():
 		lines.append("Manufacturing: %s  %d%%  (queue %d)" % [
 			GameData.recipes[_manufacturing.current_recipe()].get("name", ""),
@@ -129,21 +150,20 @@ func _status_text() -> String:
 	if _build.is_build_active():
 		lines.append(_build.status_line())
 	lines.append("Resources: " + _resource_line())
-	lines.append("[I] inventory   [M] manufacture   [B] build   [E] EMP  [Q] shield  [R] regen  [F] interact")
+	lines.append("Shooting is automatic.   [Space] use ability   [Tab] switch target   [F] interact")
+	lines.append("[I] inventory   [M] manufacture   [B] build (WASD move, Space place)")
 	for msg: Dictionary in _messages:
 		lines.append("> " + String(msg.text))
 	return "\n".join(lines)
 
 
 func _ability_text() -> String:
-	var parts: Array = []
-	parts.append("Shoot" if _combat.cooldown_ratio() <= 0.0 else "Shoot(%d%%)" % int((1.0 - _combat.cooldown_ratio()) * 100.0))
-	for ability: String in ["emp", "shield", "regen"]:
-		if _abilities.is_ready(ability):
-			parts.append(ability.capitalize())
-		else:
-			parts.append("%s(%d%%)" % [ability.capitalize(), int((1.0 - _abilities.cooldown_ratio(ability)) * 100.0)])
-	return "   ".join(parts)
+	var equipped := _abilities.equipped_id()
+	if equipped.is_empty():
+		return "Ability: —"
+	if _abilities.is_ready():
+		return "%s: ready" % _abilities.equipped_name()
+	return "%s: %d%%" % [_abilities.equipped_name(), int((1.0 - _abilities.cooldown_ratio()) * 100.0)]
 
 
 func _resource_line() -> String:
@@ -160,20 +180,6 @@ func _interaction_prompt() -> String:
 		if node.has_method("can_interact") and node.can_interact():
 			return node.interaction_prompt()
 	return ""
-
-
-func _manufacture_text() -> String:
-	var lines: Array = ["MANUFACTURING  (press number to build)"]
-	var recipe_ids: Array = GameData.recipes.keys()
-	for i in recipe_ids.size():
-		var id: String = recipe_ids[i]
-		var def: Dictionary = GameData.recipes[id]
-		var cost_parts: Array = []
-		for res: String in def.get("inputs", {}):
-			cost_parts.append("%d %s" % [int(def.inputs[res]), GameData.resource_name(res)])
-		var affordable := "" if _manufacturing.can_craft(id) else "  (need materials)"
-		lines.append("[%d] %s = %s%s" % [i + 1, String(def.get("name", id)), ", ".join(cost_parts), affordable])
-	return "\n".join(lines)
 
 
 func _summary_text() -> String:
@@ -220,35 +226,6 @@ func _on_health_changed(current: int, maximum: int) -> void:
 	_hp_label.text = "HP %d / %d" % [current, maximum]
 
 
-func _on_inventory_changed(_id: String, _qty: int) -> void:
-	if _inventory_panel != null and _inventory_panel.visible:
-		_rebuild_inventory()
-
-
-func _rebuild_inventory() -> void:
-	if _inventory_list == null:
-		return
-	for child in _inventory_list.get_children():
-		child.queue_free()
-	var header := Label.new()
-	header.text = "INVENTORY"
-	_inventory_list.add_child(header)
-	for id: String in RESOURCE_ORDER:
-		var qty := RunState.get_quantity(id)
-		var row := HBoxContainer.new()
-		var icon := TextureRect.new()
-		icon.texture = ContentLibrary.get_icon(GameData.resource_icon(id), Vector2i(16, 16), GameData.resource_color(id))
-		icon.custom_minimum_size = Vector2(18, 18)
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		row.add_child(icon)
-		var label := Label.new()
-		label.text = "%s: %d" % [GameData.resource_name(id), qty]
-		if qty <= 0:
-			label.modulate = Color(1, 1, 1, 0.4)
-		row.add_child(label)
-		_inventory_list.add_child(row)
-
-
 func _build_ui() -> void:
 	# Health bar (top-left).
 	var hp_bg := ColorRect.new()
@@ -273,18 +250,17 @@ func _build_ui() -> void:
 	_prompt.modulate = Color(1, 0.95, 0.6)
 	_add_control(_prompt)
 
-	# Inventory panel (top-right), hidden until toggled.
-	_inventory_panel = _make_panel(Vector2(470, 40), Vector2(170, 200))
-	_inventory_list = VBoxContainer.new()
-	_inventory_list.position = Vector2(8, 8)
-	_inventory_panel.add_child(_inventory_list)
-	_inventory_panel.visible = false
+	# Full-window grid inventory (modal), hidden until toggled.
+	_inventory = InventoryPanel.new()
+	add_child(_inventory)
 
-	# Manufacturing panel (right, mid), hidden until toggled.
-	_manufacture_panel = _make_panel(Vector2(360, 250), Vector2(280, 120))
-	_manufacture_label = _make_label(Vector2(8, 8), 264)
-	_manufacture_panel.add_child(_manufacture_label)
-	_manufacture_panel.visible = false
+	# Full-window manufacturing grid (modal), hidden until toggled.
+	_manufacture = ManufacturePanel.new()
+	add_child(_manufacture)
+
+	# Run-start ability chooser (modal), opened from setup().
+	_ability_choice = AbilityChoicePanel.new()
+	add_child(_ability_choice)
 
 	# End-of-run summary (center), hidden until the run ends.
 	_summary_panel = _make_panel(Vector2(120, 60), Vector2(420, 340))

@@ -28,6 +28,13 @@
       "effect": "recycler_slots",
       "value": 1,
       "desc": "+1 recycler slot."
+    },
+    "aegis_rounds": {
+      "name": "Aegis Rounds",
+      "cost": 2,
+      "effect": "shoot_upgrade",
+      "value": "aegis_rounds",
+      "desc": "Every 3 shots, gain a 1s shield."
     }
   }
 }

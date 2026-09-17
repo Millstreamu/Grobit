@@ -8,18 +8,39 @@
       "wall_tile": "wall",
       "door_closed_tile": "door_closed",
       "door_open_tile": "door_open",
-      "enemies": ["basic_enemy"],
+      "enemies": ["basic_enemy", "swarmer", "brute", "shooter"],
+      "enemy_weights": { "basic_enemy": 5, "swarmer": 3, "brute": 2, "shooter": 2 },
       "start_recyclers": ["scrap_recycler"],
       "generation": {
-        "room_count": 6,
+        "room_count": 7,
         "min_enemies": 2,
-        "max_enemies": 4
+        "max_enemies": 4,
+        "room_type_weights": { "combat": 4, "salvage": 2, "hazard": 1, "spawner": 1 }
       },
+      "salvage_loot": [
+        { "resource": "raw_scrap", "min": 2, "max": 4, "chance": 1.0 },
+        { "resource": "electronics", "min": 1, "max": 2, "chance": 0.7 },
+        { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.3 }
+      ],
+      "hazard": { "damage": 1, "interval": 0.6, "radius": 40 },
+      "spawner": { "markers": 1, "base_count": 3, "count_growth": 2, "base_health": 3, "base_speed": 55, "health_per_wave": 1, "speed_per_wave": 0.05 },
       "resource_drops": {
         "basic_enemy": [
           { "resource": "raw_scrap", "min": 1, "max": 2, "chance": 1.0 },
           { "resource": "electronics", "min": 1, "max": 1, "chance": 0.35 },
           { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.15 }
+        ],
+        "swarmer": [
+          { "resource": "raw_scrap", "min": 1, "max": 1, "chance": 1.0 }
+        ],
+        "brute": [
+          { "resource": "raw_scrap", "min": 2, "max": 3, "chance": 1.0 },
+          { "resource": "electronics", "min": 1, "max": 1, "chance": 0.5 },
+          { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.25 }
+        ],
+        "shooter": [
+          { "resource": "electronics", "min": 1, "max": 1, "chance": 0.8 },
+          { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.2 }
         ]
       },
       "objective": {

@@ -25,19 +25,45 @@ artwork.
 
 | Input | Action |
 | --- | --- |
-| WASD | Move |
-| Space / Left mouse | Shoot (auto-targets nearest enemy) |
-| E / Q / R | EMP / Shield / Regen abilities |
-| I | Toggle inventory |
+| — | Shooting is **automatic** — Grobit fires at the nearest/target enemy in range |
+| WASD | Move (in build mode: move the placement cursor) |
+| Space | Use your equipped ability (chosen at run start); in build mode: place; in menus: confirm |
+| Tab | Switch shooting target (cycles enemies in range) |
+| I | Open/close the grid inventory (WASD move cursor, Space pick up/drop, drop scrap on the recycler to feed it) |
 | M | Toggle manufacturing panel (number keys build recipes) |
-| B | Toggle build mode (1/2 select, left click place, B/Esc exit) |
+| B | Toggle build mode (1/2 select, WASD move cursor, Space place, B/Esc exit) |
 | F | Interact (repair generator, extract) |
 | Enter | Start a new run from the summary screen |
 
+Fully keyboard-driven — no mouse required.
+
 ## Systems overview
 
+Generated areas mix several room types (weighted, data-driven in
+`data/game/area.json`): **start**, **combat** (lock + clear), **objective**
+(Power Generator), **salvage** (guaranteed loot, no fight), **hazard** (combat +
+a damage zone), and **spawner** (doors lock and a wave spawns; clear it to
+unlock, then leaving and returning re-arms a fresh, bigger wave). A HUD
+**minimap** shows room types, cleared state, your position, and the objective.
+
+The inventory is a fixed **grid of single-item slots** (no stacking) — capacity
+matters, and a full inventory leaves pickups on the ground until you free space.
+The **Scrap Recycler is a module occupying a slot**: recycling only happens when
+you move raw scrap onto it, after which it processes over time and drops the
+output into a free slot. Manufacturing likewise needs a free slot for its output.
+
+Combat: shooting is automatic. At the start of each run you **choose one active
+ability** (EMP / Shield / Regen, data-driven in `data/game/abilities.json`) bound
+to Space. Shoot upgrades layer on top — e.g. the `aegis_rounds` tech grants a 1s
+shield every 3 shots. (Choosing at run start is in; mid-run switching/unlocking
+and more shoot upgrades are the planned next steps.)
+
+Enemies are data-driven (`data/game/enemies.json`): a melee grunt, a fast
+swarmer, a tanky brute, and a ranged shooter that keeps its distance and fires.
+Rooms spawn a weighted mix (`enemy_weights` in the area definition).
+
 Data-driven definitions live in `data/game/` (resources, recyclers, recipes,
-buildables, tech, area). Global state is split into three autoloads:
+buildables, tech, enemies, area). Global state is split into three autoloads:
 `ContentLibrary` (art + placeholders), `GameData` (definitions), `RunState`
 (per-run data) and `MetaState` (permanent tech progression, saved to `user://`).
 The run itself is orchestrated by `scripts/world/run_controller.gd`.

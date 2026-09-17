@@ -70,6 +70,8 @@ class ProjectStructureTests(unittest.TestCase):
             "recipes.json",
             "buildables.json",
             "tech.json",
+            "enemies.json",
+            "abilities.json",
             "area.json",
         ):
             path = ROOT / "data" / "game" / name
@@ -90,6 +92,8 @@ class ProjectStructureTests(unittest.TestCase):
             "scripts/world/room.gd",
             "scripts/world/area_generator.gd",
             "scripts/world/run_controller.gd",
+            "scripts/world/hazard_zone.gd",
+            "scripts/world/spawner.gd",
             "scripts/build/build_manager.gd",
             "scripts/build/respawn_beacon.gd",
             "scripts/build/extraction_beacon.gd",
@@ -97,6 +101,12 @@ class ProjectStructureTests(unittest.TestCase):
             "scripts/machines/manufacturing.gd",
             "scripts/machines/power_generator.gd",
             "scripts/ui/hud.gd",
+            "scripts/ui/selector.gd",
+            "scripts/ui/selection_manager.gd",
+            "scripts/ui/minimap.gd",
+            "scripts/ui/inventory_panel.gd",
+            "scripts/ui/manufacture_panel.gd",
+            "scripts/ui/ability_choice_panel.gd",
         )
         for relative_path in expected:
             with self.subTest(path=relative_path):
@@ -164,6 +174,7 @@ class ProjectStructureTests(unittest.TestCase):
             "scripts/player/player_combat.gd",
             "scripts/enemies/basic_enemy.gd",
             "scripts/combat/projectile.gd",
+            "scripts/combat/enemy_projectile.gd",
             "scripts/resources/scrap_pickup.gd",
             "scripts/core/resource_counter.gd",
         )

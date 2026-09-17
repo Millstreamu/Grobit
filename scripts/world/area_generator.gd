@@ -29,6 +29,7 @@ var _walls: StaticBody2D
 var _doors_root: Node2D
 
 var rooms: Array[Room] = []
+var room_edges: Array = []  # slot pairs, for the minimap connection lines
 var start_position := Vector2.ZERO
 var objective_room: Room
 
@@ -58,6 +59,11 @@ func build(area_id: String, run_seed: int) -> Vector2:
 	var enemy_id := "basic_enemy"
 	if area.get("enemies", []) is Array and not area.enemies.is_empty():
 		enemy_id = String(area.enemies[0])
+	var weights: Dictionary = generation.get("room_type_weights", {"combat": 1})
+	var enemy_weights: Dictionary = area.get("enemy_weights", {})
+	var salvage_loot: Array = area.get("salvage_loot", [])
+	var hazard_config: Dictionary = area.get("hazard", {})
+	var spawner_config: Dictionary = area.get("spawner", {})
 
 	var layout := _generate_layout(rng, room_count)
 	var slots: Array = layout.slots
@@ -65,6 +71,7 @@ func build(area_id: String, run_seed: int) -> Vector2:
 	var open_sides: Dictionary = layout.open_sides
 	var start_slot: Vector2i = slots[0]
 	var objective_slot: Vector2i = _farthest_slot(slots, edges, start_slot)
+	room_edges = edges
 
 	# Corridors first so room openings render on top of corridor floor.
 	for edge: Array in edges:
@@ -76,7 +83,12 @@ func build(area_id: String, run_seed: int) -> Vector2:
 			type = Room.RoomType.START
 		elif slot == objective_slot:
 			type = Room.RoomType.OBJECTIVE
+		else:
+			type = _pick_room_type(weights, rng)
 		var room := _build_room(slot, open_sides.get(slot, []), type, run_seed, enemy_min, enemy_max, enemy_id)
+		room.enemy_weights = enemy_weights
+		room.salvage_loot = salvage_loot
+		room.hazard_config = hazard_config
 		rooms.append(room)
 		if type == Room.RoomType.START:
 			start_position = room.center()
@@ -86,7 +98,55 @@ func build(area_id: String, run_seed: int) -> Vector2:
 	_render_tiles()
 	for room: Room in rooms:
 		room.build_trigger()
+		_populate_room(room, spawner_config, enemy_id)
 	return start_position
+
+
+func _pick_room_type(weights: Dictionary, rng: RandomNumberGenerator) -> int:
+	var total := 0
+	for key: String in weights:
+		total += int(weights[key])
+	if total <= 0:
+		return Room.RoomType.COMBAT
+	var roll := rng.randi_range(1, total)
+	var acc := 0
+	for key: String in weights:
+		acc += int(weights[key])
+		if roll <= acc:
+			return _type_from_string(key)
+	return Room.RoomType.COMBAT
+
+
+func _type_from_string(name: String) -> int:
+	match name:
+		"salvage": return Room.RoomType.SALVAGE
+		"hazard": return Room.RoomType.HAZARD
+		"spawner": return Room.RoomType.SPAWNER
+	return Room.RoomType.COMBAT
+
+
+func _populate_room(room: Room, spawner_config: Dictionary, enemy_id: String) -> void:
+	match room.room_type:
+		Room.RoomType.SALVAGE:
+			room.spawn_salvage()
+		Room.RoomType.HAZARD:
+			room.spawn_hazard()
+		Room.RoomType.SPAWNER:
+			_add_spawners(room, spawner_config, enemy_id)
+
+
+func _add_spawners(room: Room, config: Dictionary, _enemy_id: String) -> void:
+	room.spawner_config = config
+	var markers := maxi(1, int(config.get("markers", 1)))
+	var origin := _slot_origin(room.slot)
+	for i in markers:
+		var spawner := Spawner.new()
+		room.add_child(spawner)
+		# Mount on the top interior row, spread horizontally, clear of the centre door.
+		var tx := origin.x + 2 + i * 3
+		var ty := origin.y + 1
+		spawner.global_position = Vector2(tx * tile + tile * 0.5, ty * tile + tile * 0.5)
+		room.spawners.append(spawner)
 
 
 # ---------------------------------------------------------------- layout ----
@@ -173,12 +233,14 @@ func _build_room(slot: Vector2i, open_sides: Array, type: int, run_seed: int, en
 	var room := Room.new()
 	room.name = "Room_%d_%d" % [slot.x, slot.y]
 	room.room_type = type
+	room.slot = slot
 	room.interior_rect = Rect2(
 		Vector2((origin.x + 1) * tile, (origin.y + 1) * tile),
 		Vector2((ROOM_W - 2) * tile, (ROOM_H - 2) * tile)
 	)
 	room.enemy_id = enemy_id
-	if type == Room.RoomType.START:
+	# Start/salvage/spawner rooms have no on-entry enemy wave.
+	if type == Room.RoomType.START or type == Room.RoomType.SALVAGE or type == Room.RoomType.SPAWNER:
 		room.enemy_min = 0
 		room.enemy_max = 0
 	else:

@@ -52,6 +52,10 @@ func _process(_delta: float) -> void:
 			extract_confirmed.emit()
 
 
+func selection_size() -> int:
+	return 32
+
+
 func can_interact() -> bool:
 	return _in_range
 

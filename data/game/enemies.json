@@ -1,0 +1,45 @@
+{
+  "_comment": "Enemy type definitions. behavior 'melee' chases and hits; 'ranged' keeps distance and fires. Sizes drive sprite/collision/selection. Icons fall back to placeholders.",
+  "enemies": {
+    "basic_enemy": {
+      "name": "Grunt",
+      "sprite": "enemy_basic",
+      "color": "d46d6d",
+      "size": 16,
+      "health": 3,
+      "speed": 55,
+      "behavior": "melee",
+      "melee": { "range": 26, "damage": 1, "interval": 1.0 }
+    },
+    "swarmer": {
+      "name": "Swarmer",
+      "sprite": "enemy_swarmer",
+      "color": "e0a53a",
+      "size": 12,
+      "health": 2,
+      "speed": 95,
+      "behavior": "melee",
+      "melee": { "range": 22, "damage": 1, "interval": 0.8 }
+    },
+    "brute": {
+      "name": "Brute",
+      "sprite": "enemy_brute",
+      "color": "8a4fd4",
+      "size": 26,
+      "health": 9,
+      "speed": 34,
+      "behavior": "melee",
+      "melee": { "range": 32, "damage": 2, "interval": 1.3 }
+    },
+    "shooter": {
+      "name": "Shooter",
+      "sprite": "enemy_shooter",
+      "color": "4fae6b",
+      "size": 18,
+      "health": 3,
+      "speed": 45,
+      "behavior": "ranged",
+      "ranged": { "range": 220, "desired_distance": 140, "damage": 1, "interval": 1.6, "projectile_speed": 200 }
+    }
+  }
+}

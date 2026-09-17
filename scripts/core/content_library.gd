@@ -6,26 +6,41 @@ extends Node
 ## generated placeholder is produced and the missing id is recorded so it can be
 ## reported (see docs/ ARTWORK NEEDED output on startup).
 
-const ATLAS_PATH := "res://content/atlases/prototype/prototype_atlas.json"
+# Atlases are merged in priority order — earlier paths win on id conflicts, so a
+# newer/better sprite sheet listed first overrides the same id in older sheets.
+const ATLAS_PATHS := [
+	"res://content/atlases/prototype/grobit_atlas.json",
+	"res://content/atlases/prototype/prototype_atlas.json",
+]
 const TILESET_PATH := "res://content/tilesets/prototype/prototype_environment.json"
 
-var atlas := AtlasContent.new()
 var tileset := TilesetContent.new()
+var _atlases: Array[AtlasContent] = []
+var _icon_lookup: Dictionary = {}  # sprite id -> AtlasTexture (highest priority)
 var _placeholder_cache: Dictionary = {}
 var _missing: Dictionary = {}
 
 
 func _ready() -> void:
-	if not atlas.load_json(ATLAS_PATH):
-		push_error("ContentLibrary could not load atlas: %s" % atlas.last_error)
+	for path: String in ATLAS_PATHS:
+		if not FileAccess.file_exists(path):
+			continue
+		var atlas := AtlasContent.new()
+		if not atlas.load_json(path):
+			push_error("ContentLibrary could not load atlas '%s': %s" % [path, atlas.last_error])
+			continue
+		_atlases.append(atlas)
+		for sprite_name: String in atlas.sprites:
+			if not _icon_lookup.has(sprite_name):  # first (highest priority) wins
+				_icon_lookup[sprite_name] = atlas.get_sprite(sprite_name)
 	if not tileset.load_json(TILESET_PATH):
 		push_error("ContentLibrary could not load tileset: %s" % tileset.last_error)
 
 
 ## Returns an icon texture for the given atlas sprite id, or a placeholder.
 func get_icon(icon_id: String, size := Vector2i(16, 16), color_hex := "") -> Texture2D:
-	if not icon_id.is_empty() and atlas.sprites.has(icon_id):
-		return atlas.get_sprite(icon_id)
+	if not icon_id.is_empty() and _icon_lookup.has(icon_id):
+		return _icon_lookup[icon_id]
 	_record_missing(icon_id, size)
 	return _placeholder(icon_id, size, color_hex)
 
@@ -39,7 +54,7 @@ func get_tile(tile_id: String, size := Vector2i(32, 32), color_hex := "") -> Tex
 
 
 func has_icon(icon_id: String) -> bool:
-	return atlas.sprites.has(icon_id)
+	return _icon_lookup.has(icon_id)
 
 
 func missing_ids() -> Array:

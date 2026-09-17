@@ -1,0 +1,25 @@
+{
+  "_comment": "Active abilities. One is equipped per run (chosen at the start) and triggered with Space. Params are read by GrobitAbilities.",
+  "abilities": {
+    "emp": {
+      "name": "EMP",
+      "desc": "Disables and lightly damages nearby enemies.",
+      "cooldown": 6.0,
+      "radius": 140,
+      "damage": 1,
+      "disable_seconds": 2.5
+    },
+    "shield": {
+      "name": "Shield",
+      "desc": "A few seconds of protection.",
+      "cooldown": 8.0,
+      "duration": 3.0
+    },
+    "regen": {
+      "name": "Regen",
+      "desc": "Restore some health.",
+      "cooldown": 10.0,
+      "amount": 4
+    }
+  }
+}

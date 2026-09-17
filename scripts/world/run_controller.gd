@@ -56,14 +56,33 @@ func _ready() -> void:
 	add_child(player)
 	player.died.connect(_on_player_died)
 
+	var selection := SelectionManager.new()
+	selection.name = "SelectionManager"
+	add_child(selection)
+
 	hud = Hud.new()
 	hud.name = "HUD"
 	add_child(hud)
-	hud.setup(player, recycler_system, manufacturing, build_manager)
+	hud.setup(player, recycler_system, manufacturing, build_manager, generator)
 	build_manager.message.connect(hud.log_message)
+
+	if OS.has_environment("GROBIT_DEBUG_ENEMIES"):
+		_debug_spawn_enemies()
 
 	# Report which artwork is still using placeholders (all icons now requested).
 	ContentLibrary.print_missing_report.call_deferred()
+
+
+# Debug helper (env-gated): spawns one of each enemy type near the start so their
+# behaviour (including ranged fire) can be exercised without walking into a room.
+func _debug_spawn_enemies() -> void:
+	var i := 0
+	for eid: String in GameData.enemies:
+		var e := load("res://scenes/enemies/basic_enemy.tscn").instantiate() as BasicEnemy
+		e.enemy_id = eid
+		e.global_position = player.global_position + Vector2(60 + i * 34, 30)
+		add_child(e)
+		i += 1
 
 
 func _spawn_objective() -> void:

@@ -17,5 +17,8 @@ func _ready() -> void:
 func _on_body_entered(body: Node) -> void:
 	if not body.is_in_group("player"):
 		return
-	RunState.add(resource_id, amount)
-	queue_free()
+	# Inventory is a finite grid: only take what fits, leave the rest on the floor.
+	var placed := RunState.add(resource_id, amount)
+	amount -= placed
+	if amount <= 0:
+		queue_free()

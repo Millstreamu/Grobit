@@ -25,6 +25,10 @@ func _process(delta: float) -> void:
 		return
 	_timer -= delta
 	if _timer <= 0.0:
+		# Hold the finished item until an inventory slot frees up.
+		if not RunState.has_space():
+			_timer = 0.0
+			return
 		var def := _def(_current)
 		RunState.add(String(def.get("output", _current)), int(def.get("output_amount", 1)))
 		_current = ""

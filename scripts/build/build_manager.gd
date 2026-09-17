@@ -1,8 +1,8 @@
 class_name BuildManager
 extends Node2D
-## Very simple build mode. Toggle it, pick a buildable, and a ghost preview
-## follows the cursor. Placement is allowed only on valid ground near Grobit and
-## costs resources. Only two buildables exist in the prototype.
+## Very simple, fully keyboard-driven build mode. Toggle it, pick a buildable, and
+## a grid cursor (moved with WASD, while Grobit holds still) shows a ghost preview.
+## Placement is allowed only on valid ground near Grobit and costs resources.
 
 signal state_changed(active: bool)
 signal message(text: String)
@@ -14,6 +14,8 @@ var _active := false
 var _buildable_ids: Array[String] = []
 var _selected := 0
 var _preview: Sprite2D
+var _selector: Selector
+var _cursor_tile := Vector2i.ZERO
 
 
 func _ready() -> void:
@@ -24,6 +26,10 @@ func _ready() -> void:
 	_preview.z_index = 5
 	_preview.visible = false
 	add_child(_preview)
+	_selector = Selector.new()
+	_selector.pulse = false  # steady bracket; colour conveys valid/invalid
+	add_child(_selector)
+	_selector.clear()
 	_refresh_preview_texture()
 
 
@@ -40,10 +46,13 @@ func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("hotbar_2"):
 		_select(1)
 
-	var pos := _snapped_target()
+	_move_cursor()
+	var pos := _tile_center(_cursor_tile)
 	_preview.global_position = pos
 	var ok := _is_valid(pos) and RunState.can_afford(_current_cost())
 	_preview.modulate = Color(0.4, 1, 0.4, 0.6) if ok else Color(1, 0.4, 0.4, 0.6)
+	_selector.highlight(pos, 32)
+	_selector.set_color(Color(0.4, 1, 0.4) if ok else Color(1, 0.4, 0.4))
 
 	if Input.is_action_just_pressed("attack"):
 		_try_place(pos)
@@ -64,7 +73,7 @@ func status_line() -> String:
 		return ""
 	var id := selected_buildable()
 	var def: Dictionary = GameData.buildables.get(id, {})
-	return "BUILD: %s  (%s)   [1/2] select   [LMB] place   [B/Esc] exit" % [
+	return "BUILD: %s  (%s)   [1/2] select   [WASD] move   [Space] place   [B/Esc] exit" % [
 		String(def.get("name", id)), _cost_text(_current_cost())
 	]
 
@@ -74,6 +83,9 @@ func _set_active(value: bool) -> void:
 	_preview.visible = value
 	if value:
 		_refresh_preview_texture()
+		_reset_cursor()
+	else:
+		_selector.clear()
 	state_changed.emit(_active)
 
 
@@ -93,9 +105,46 @@ func _current_cost() -> Dictionary:
 	return GameData.buildables.get(selected_buildable(), {}).get("cost", {})
 
 
-func _snapped_target() -> Vector2:
-	var mouse := get_global_mouse_position()
-	return Vector2(floorf(mouse.x / tile) * tile + tile * 0.5, floorf(mouse.y / tile) * tile + tile * 0.5)
+func _tile_center(tile_coord: Vector2i) -> Vector2:
+	return Vector2(tile_coord.x * tile + tile * 0.5, tile_coord.y * tile + tile * 0.5)
+
+
+func _world_to_tile(world_position: Vector2) -> Vector2i:
+	return Vector2i(floori(world_position.x / tile), floori(world_position.y / tile))
+
+
+# Places the cursor on the tile just in front of Grobit when build mode opens.
+func _reset_cursor() -> void:
+	var player := get_tree().get_first_node_in_group("player") as GrobitPlayer
+	if player == null:
+		_cursor_tile = Vector2i.ZERO
+		return
+	var facing := player.facing_direction()
+	var step := Vector2i(roundi(facing.x), roundi(facing.y))
+	if step == Vector2i.ZERO:
+		step = Vector2i(0, -1)
+	_cursor_tile = _world_to_tile(player.global_position) + step
+
+
+# One tile per key press (precise); ignores steps that would leave build range.
+func _move_cursor() -> void:
+	var player := get_tree().get_first_node_in_group("player") as Node2D
+	if player == null:
+		return
+	var step := Vector2i.ZERO
+	if Input.is_action_just_pressed("move_up"):
+		step.y -= 1
+	if Input.is_action_just_pressed("move_down"):
+		step.y += 1
+	if Input.is_action_just_pressed("move_left"):
+		step.x -= 1
+	if Input.is_action_just_pressed("move_right"):
+		step.x += 1
+	if step == Vector2i.ZERO:
+		return
+	var candidate := _cursor_tile + step
+	if player.global_position.distance_to(_tile_center(candidate)) <= build_range:
+		_cursor_tile = candidate
 
 
 func _is_valid(pos: Vector2) -> bool:

@@ -1,0 +1,118 @@
+{
+  "image": "grobit_atlas.png",
+  "width": 128,
+  "height": 112,
+  "count": 13,
+  "padding": 0,
+  "spacing": 0,
+  "sprites": {
+    "grobit": {
+      "x": 0,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "kind": "prop",
+      "collision": true
+    },
+    "grobit_gun_01": {
+      "x": 0,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "prop"
+    },
+    "enemy_basic": {
+      "x": 16,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "prop",
+      "collision": true,
+      "tags": [
+        "enemy"
+      ]
+    },
+    "scrap_metal": {
+      "x": 32,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor",
+      "tags": [
+        "resources"
+      ]
+    },
+    "electronics": {
+      "x": 48,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor",
+      "tags": [
+        "resources"
+      ]
+    },
+    "tech_data": {
+      "x": 64,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "power_cell": {
+      "x": 80,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor",
+      "tags": [
+        "resources"
+      ]
+    },
+    "respawn_beacon": {
+      "x": 32,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "kind": "prop",
+      "collision": true
+    },
+    "extraction_beacon": {
+      "x": 64,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "kind": "prop",
+      "collision": true
+    },
+    "power_generator": {
+      "x": 0,
+      "y": 0,
+      "w": 64,
+      "h": 64,
+      "kind": "prop",
+      "collision": true
+    },
+    "selection_16": {
+      "x": 96,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "selection_32": {
+      "x": 96,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "kind": "decor"
+    },
+    "selection_64": {
+      "x": 64,
+      "y": 0,
+      "w": 64,
+      "h": 64,
+      "kind": "decor"
+    }
+  }
+}

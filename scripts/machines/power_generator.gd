@@ -49,6 +49,10 @@ func _process(_delta: float) -> void:
 		_deposit()
 
 
+func selection_size() -> int:
+	return 64
+
+
 func can_interact() -> bool:
 	return _player_in_range and not is_repaired
 
