@@ -149,8 +149,9 @@ func _spawn_drops() -> void:
 
 
 func _drop_table() -> Array:
-	var area: Dictionary = GameData.area(RunState.area_id)
-	var table: Variant = area.get("resource_drops", {}).get(enemy_id, null)
+	# Prefer tool-authored drops (generation.json), fall back to area.json.
+	var drops: Dictionary = GameData.generation.get("resource_drops", GameData.area(RunState.area_id).get("resource_drops", {}))
+	var table: Variant = drops.get(enemy_id, null)
 	if table is Array:
 		return table
 	return [{"resource": "raw_scrap", "min": 1, "max": 2, "chance": 1.0}]

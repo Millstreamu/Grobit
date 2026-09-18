@@ -41,10 +41,9 @@ func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("build_cancel"):
 		_set_active(false)
 		return
-	if Input.is_action_just_pressed("hotbar_1"):
-		_select(0)
-	if Input.is_action_just_pressed("hotbar_2"):
-		_select(1)
+	for i in mini(4, _buildable_ids.size()):
+		if Input.is_action_just_pressed("hotbar_%d" % (i + 1)):
+			_select(i)
 
 	_move_cursor()
 	var pos := _tile_center(_cursor_tile)
@@ -73,8 +72,8 @@ func status_line() -> String:
 		return ""
 	var id := selected_buildable()
 	var def: Dictionary = GameData.buildables.get(id, {})
-	return "BUILD: %s  (%s)   [1/2] select   [WASD] move   [Space] place   [B/Esc] exit" % [
-		String(def.get("name", id)), _cost_text(_current_cost())
+	return "BUILD: %s  (%s)   [1-%d] select   [WASD] move   [Space] place   [B/Esc] exit" % [
+		String(def.get("name", id)), _cost_text(_current_cost()), _buildable_ids.size()
 	]
 
 
@@ -195,6 +194,10 @@ func _instantiate_buildable(id: String) -> Node2D:
 				if controller.has_method("on_extraction_confirmed"):
 					beacon.extract_confirmed.connect(controller.on_extraction_confirmed)
 			return beacon
+		"fabricator":
+			var machine := Fabricator.new()
+			machine.buildable_id = id
+			return machine
 	push_error("BuildManager has no buildable named '%s'." % id)
 	return null
 

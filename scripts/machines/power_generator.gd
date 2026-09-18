@@ -42,10 +42,8 @@ func _on_body_exited(body: Node) -> void:
 		_player_in_range = false
 
 
-func _process(_delta: float) -> void:
-	if is_repaired or not _player_in_range:
-		return
-	if Input.is_action_just_pressed("interact"):
+func interact() -> void:
+	if not is_repaired and _player_in_range:
 		_deposit()
 
 

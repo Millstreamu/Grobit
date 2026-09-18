@@ -35,6 +35,15 @@ func set_max_health(value: int, refill := true) -> void:
 	health_changed.emit(health, max_health)
 
 
+## Raises maximum health and heals by the same amount (e.g. a repair reward).
+func add_max_health(amount: int) -> void:
+	if amount <= 0:
+		return
+	max_health += amount
+	health += amount
+	health_changed.emit(health, max_health)
+
+
 func take_damage(amount: int) -> void:
 	if _dead or amount <= 0 or _invuln > 0.0:
 		return

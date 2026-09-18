@@ -19,6 +19,9 @@ listing whatever placeholders were actually used that session.
 | `enemy_brute` | 26×26 | Slow, tanky melee enemy |
 | `enemy_shooter` | 18×18 | Ranged enemy that keeps its distance and fires |
 | `enemy_shot` | 8×8 | Enemy projectile |
+| `scrap_node` | ~20×20 | Harvestable breakdown scrap (most rooms) |
+| `repair_station` | 32×32 | Broken equipment you repair for a reward (workshop rooms) |
+| `fabricator` | 30×30 | Buildable crafting machine (interact to manufacture) |
 
 ## UI art (nice-to-have — panels currently use plain coloured squares)
 

@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/resources/scrap_pickup.gd" id="1"]
 [sub_resource type="CircleShape2D" id="1"]
-radius = 8.0
+radius = 15.0
 
 [node name="ScrapPickup" type="Area2D"]
 collision_layer = 8

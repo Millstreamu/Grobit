@@ -7,14 +7,19 @@ extends Node2D
 signal room_cleared(room: Room)
 signal room_activated(room: Room)
 
-enum RoomType { START, COMBAT, OBJECTIVE, SALVAGE, HAZARD, SPAWNER }
+enum RoomType { START, COMBAT, OBJECTIVE, SALVAGE, HAZARD, SPAWNER, WORKSHOP }
 
 const ENEMY_SCENE := preload("res://scenes/enemies/basic_enemy.tscn")
 const PICKUP_SCENE := preload("res://scenes/resources/scrap_pickup.tscn")
 
 var room_type := RoomType.COMBAT
-var slot := Vector2i.ZERO  # grid coordinate, used by the minimap
-var interior_rect: Rect2
+# Irregular shape: the grid cells this room owns, the walkable floor-tile centres
+# (world space) used for spawns, the cell size in pixels, and a cell-space centroid
+# for the minimap.
+var cells: Array[Vector2i] = []
+var interior_tiles: Array[Vector2] = []
+var cell_pixels := 0.0
+var map_position := Vector2.ZERO
 var doors: Array[Door] = []
 var enemy_min := 2
 var enemy_max := 4
@@ -44,19 +49,26 @@ func build_trigger() -> void:
 	_trigger = Area2D.new()
 	_trigger.collision_mask = 1
 	_trigger.monitoring = true
-	var shape := CollisionShape2D.new()
-	var rect := RectangleShape2D.new()
-	rect.size = interior_rect.size
-	shape.shape = rect
-	shape.position = interior_rect.get_center()
-	_trigger.add_child(shape)
+	# One rectangle per owned cell covers the room's irregular footprint.
+	for c: Vector2i in cells:
+		var shape := CollisionShape2D.new()
+		var rect := RectangleShape2D.new()
+		rect.size = Vector2(cell_pixels, cell_pixels)
+		shape.shape = rect
+		shape.position = Vector2(c.x * cell_pixels + cell_pixels * 0.5, c.y * cell_pixels + cell_pixels * 0.5)
+		_trigger.add_child(shape)
 	add_child(_trigger)
 	_trigger.body_entered.connect(_on_body_entered)
 	_trigger.body_exited.connect(_on_body_exited)
 
 
 func center() -> Vector2:
-	return interior_rect.get_center()
+	if interior_tiles.is_empty():
+		return map_position * cell_pixels
+	var sum := Vector2.ZERO
+	for t: Vector2 in interior_tiles:
+		sum += t
+	return sum / interior_tiles.size()
 
 
 func _on_body_entered(body: Node) -> void:
@@ -94,12 +106,21 @@ func spawn_salvage() -> void:
 		var pickup := PICKUP_SCENE.instantiate()
 		pickup.resource_id = String(drop.get("resource", "raw_scrap"))
 		pickup.amount = amount
-		var inset := interior_rect.grow(-16.0)
-		pickup.global_position = Vector2(
-			rng.randf_range(inset.position.x, inset.end.x),
-			rng.randf_range(inset.position.y, inset.end.y)
-		)
+		pickup.global_position = _random_interior_point()
 		add_child(pickup)
+
+
+## Scatters harvestable scrap nodes — most rooms have some (the main resource income).
+func spawn_harvest(config: Dictionary) -> void:
+	if config.is_empty():
+		return
+	var count := rng.randi_range(int(config.get("per_room_min", 1)), int(config.get("per_room_max", 3)))
+	for i in count:
+		var node := ScrapNode.new()
+		node.yield_table = config.get("yield", [])
+		node.charges = int(config.get("charges", 3))
+		add_child(node)
+		node.global_position = _random_interior_point()
 
 
 ## Places a persistent damage zone in the middle of a hazard room.
@@ -178,8 +199,9 @@ func _spawn_enemy(pos: Vector2, eid: String, bonus_health := 0, speed_mult := 1.
 
 
 func _random_interior_point() -> Vector2:
-	var inset := interior_rect.grow(-20.0)
-	return Vector2(rng.randf_range(inset.position.x, inset.end.x), rng.randf_range(inset.position.y, inset.end.y))
+	if interior_tiles.is_empty():
+		return center()
+	return interior_tiles[rng.randi_range(0, interior_tiles.size() - 1)]
 
 
 func _on_enemy_gone() -> void:

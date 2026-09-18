@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grobit Config Studio</title>
+<style>
+  :root{
+    --bg:#12131a; --panel:#1b1d27; --panel2:#232634; --line:#2f3342;
+    --text:#e6e8ef; --muted:#9aa0b0; --accent:#5aa9e6; --accent2:#e0b23a;
+    --wall:#20232e; --door:#e0b23a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:12px}
+  header h1{font-size:18px;margin:0;letter-spacing:.3px}
+  header .sub{color:var(--muted);font-size:12px}
+  .tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .tab{padding:10px 16px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;user-select:none}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--text);border-bottom-color:var(--accent)}
+  .view{display:none;padding:16px}
+  .view.active{display:block}
+  .gen{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+  @media(max-width:820px){.gen{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:0 0 12px}
+  .ctrl{margin-bottom:12px}
+  .ctrl label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .ctrl label b{color:var(--text);font-weight:600}
+  input[type=range]{width:100%}
+  input[type=number]{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px 8px}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  button{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px 12px;cursor:pointer;font-size:13px}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#08121b;font-weight:600}
+  canvas{background:#0c0d13;border:1px solid var(--line);border-radius:8px;width:100%;height:auto;display:block;image-rendering:pixelated}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;color:var(--muted);font-size:12px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block;border:1px solid #0006}
+  .stats{color:var(--muted);font-size:12px;margin-top:8px}
+  textarea{width:100%;min-height:340px;background:#0c0d13;color:#cfe3f0;border:1px solid var(--line);border-radius:8px;padding:12px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
+  .hint{color:var(--muted);font-size:12px;margin:6px 0 12px}
+  .export{margin-top:14px}
+  .export textarea{min-height:120px}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Grobit Config Studio</h1>
+  <span class="sub">Author generation &amp; balance data → export JSON the game reads.</span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="generation">Generation</div>
+  <div class="tab" data-tab="gameplay">Gameplay</div>
+  <div class="tab" data-tab="enemies">Enemies</div>
+  <div class="tab" data-tab="abilities">Abilities</div>
+  <div class="tab" data-tab="resources">Resources</div>
+</div>
+
+<!-- GENERATION -->
+<section class="view active" id="view-generation">
+  <div class="gen">
+    <div class="panel" id="controls">
+      <h2>Parameters</h2>
+      <div class="ctrl">
+        <label>Seed <b id="v-seed">1</b></label>
+        <div class="row">
+          <input type="number" id="seed" value="1" min="0" step="1">
+          <button id="rndseed" title="Random seed">🎲</button>
+        </div>
+      </div>
+      <div class="ctrl"><label>Grid width (cells) <b id="v-gw">10</b></label><input type="range" id="gw" min="3" max="14" value="10"></div>
+      <div class="ctrl"><label>Grid height (cells) <b id="v-gh">8</b></label><input type="range" id="gh" min="3" max="14" value="8"></div>
+      <div class="ctrl"><label>Cell size (tiles) <b id="v-cs">6</b></label><input type="range" id="cs" min="3" max="8" value="6"></div>
+      <div class="ctrl"><label>Room count <b id="v-rc">20</b></label><input type="range" id="rc" min="2" max="40" value="20"></div>
+      <div class="ctrl"><label>Room min cells <b id="v-rmin">4</b></label><input type="range" id="rmin" min="1" max="8" value="4"></div>
+      <div class="ctrl"><label>Room max cells <b id="v-rmax">7</b></label><input type="range" id="rmax" min="1" max="12" value="7"></div>
+      <div class="ctrl"><label>Extra loop doors <b id="v-loop">15%</b></label><input type="range" id="loop" min="0" max="100" value="15"></div>
+      <div class="ctrl"><label>Door width (tiles) <b id="v-dw">1</b></label><input type="range" id="dw" min="1" max="4" value="1"></div>
+
+      <h2 style="margin-top:18px">Room Type Weights</h2>
+      <div class="ctrl"><label>Combat <b id="v-w-combat">4</b></label><input type="range" id="w-combat" min="0" max="10" value="4"></div>
+      <div class="ctrl"><label>Salvage <b id="v-w-salvage">2</b></label><input type="range" id="w-salvage" min="0" max="10" value="2"></div>
+      <div class="ctrl"><label>Hazard <b id="v-w-hazard">1</b></label><input type="range" id="w-hazard" min="0" max="10" value="1"></div>
+      <div class="ctrl"><label>Spawner <b id="v-w-spawner">1</b></label><input type="range" id="w-spawner" min="0" max="10" value="1"></div>
+      <div class="ctrl"><label>Workshop <b id="v-w-workshop">1</b></label><input type="range" id="w-workshop" min="0" max="10" value="1"></div>
+
+      <h2 style="margin-top:18px">Enemies</h2>
+      <div class="ctrl"><label>Enemies per combat room <b id="v-emm">2–4</b></label>
+        <div class="row"><input type="number" id="emin" value="2" min="0"><input type="number" id="emax" value="4" min="0"></div></div>
+      <div class="ctrl"><label>Grunt weight <b id="v-e-basic_enemy">5</b></label><input type="range" id="e-basic_enemy" min="0" max="10" value="5"></div>
+      <div class="ctrl"><label>Swarmer weight <b id="v-e-swarmer">3</b></label><input type="range" id="e-swarmer" min="0" max="10" value="3"></div>
+      <div class="ctrl"><label>Brute weight <b id="v-e-brute">2</b></label><input type="range" id="e-brute" min="0" max="10" value="2"></div>
+      <div class="ctrl"><label>Shooter weight <b id="v-e-shooter">2</b></label><input type="range" id="e-shooter" min="0" max="10" value="2"></div>
+
+      <div class="btns">
+        <button id="regen">Regenerate (new seed)</button>
+      </div>
+      <div class="export">
+        <div class="btns">
+          <button class="primary" id="download">Download generation.json</button>
+          <button id="copy">Copy JSON</button>
+        </div>
+        <div class="hint">Save as <code>data/game/generation.json</code> in the project.</div>
+        <textarea id="json" readonly></textarea>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Preview</h2>
+      <canvas id="cv" width="700" height="560"></canvas>
+      <div class="legend">
+        <span><i class="sw" style="background:#20232e"></i> wall</span>
+        <span><i class="sw" style="background:#e0b23a"></i> door</span>
+        <span><i class="sw" style="background:#6699ff"></i> start (S)</span>
+        <span><i class="sw" style="background:#f2cc4d"></i> objective (O)</span>
+        <span><i class="sw" style="background:#8c8c99"></i> combat</span>
+        <span><i class="sw" style="background:#4dcccc"></i> salvage</span>
+        <span><i class="sw" style="background:#e6804d"></i> hazard</span>
+        <span><i class="sw" style="background:#b366e6"></i> spawner</span>
+        <span><i class="sw" style="background:#d9d98c"></i> workshop</span>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="hint">Rooms are unions of grid cells (complex shapes), packed with no corridors; connected rooms share a carved doorway. Same algorithm will run in the game from these parameters + the run seed.</div>
+    </div>
+  </div>
+</section>
+
+<!-- GAMEPLAY -->
+<section class="view" id="view-gameplay">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start">
+    <div class="panel">
+      <h2>Harvest (scrap nodes)</h2>
+      <div class="hint">Most rooms scatter these — the main resource income.</div>
+      <div class="ctrl"><label>Nodes per room (min / max)</label><div class="row"><input type="number" id="g-h-min" value="1" min="0"><input type="number" id="g-h-max" value="3" min="0"></div></div>
+      <div class="ctrl"><label>Charges per node</label><input type="number" id="g-h-charges" value="3" min="1"></div>
+      <div class="hint">Yield table (JSON array)</div>
+      <textarea id="g-harvest-yield" style="min-height:120px">[
+  { "resource": "raw_scrap", "min": 1, "max": 2, "chance": 1.0 },
+  { "resource": "metal", "min": 1, "max": 1, "chance": 0.2 }
+]</textarea>
+    </div>
+
+    <div class="panel">
+      <h2>Spawner rooms</h2>
+      <div class="hint">Doors lock, a wave spawns; leaving/returning re-arms a bigger wave.</div>
+      <div class="ctrl"><label>Wall spawners (markers)</label><input type="number" id="g-sp-markers" value="1" min="1"></div>
+      <div class="ctrl"><label>Base wave size / growth per wave</label><div class="row"><input type="number" id="g-sp-base" value="3" min="1"><input type="number" id="g-sp-growth" value="2" min="0"></div></div>
+      <div class="ctrl"><label>+Health per wave / speed × per wave</label><div class="row"><input type="number" id="g-sp-hpw" value="1" min="0"><input type="number" id="g-sp-spw" value="0.05" min="0" step="0.01"></div></div>
+      <div class="ctrl"><label>Base health / base speed</label><div class="row"><input type="number" id="g-sp-hp" value="3" min="1"><input type="number" id="g-sp-spd" value="55" min="1"></div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Repair reward (workshop rooms)</h2>
+      <div class="ctrl"><label>Cost (metal)</label><input type="number" id="g-rp-metal" value="2" min="0"></div>
+      <div class="ctrl"><label>Reward pool</label>
+        <div style="display:flex;flex-direction:column;gap:6px;color:var(--text)">
+          <label style="justify-content:flex-start;gap:8px;color:var(--text)"><input type="checkbox" id="g-rw-ability" checked> Unlock a new ability</label>
+          <label style="justify-content:flex-start;gap:8px;color:var(--text)"><input type="checkbox" id="g-rw-max_health" checked> +5 max health</label>
+          <label style="justify-content:flex-start;gap:8px;color:var(--text)"><input type="checkbox" id="g-rw-aegis_rounds" checked> Aegis Rounds (shoot upgrade)</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Salvage loot (JSON array)</h2>
+      <div class="hint">Guaranteed loot in salvage rooms.</div>
+      <textarea id="g-salvage" style="min-height:150px">[
+  { "resource": "raw_scrap", "min": 2, "max": 4, "chance": 1.0 },
+  { "resource": "electronics", "min": 1, "max": 2, "chance": 0.7 },
+  { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.3 }
+]</textarea>
+    </div>
+
+    <div class="panel" style="grid-column:1/-1">
+      <h2>Enemy resource drops (JSON)</h2>
+      <div class="hint">Keyed by enemy id → drop table. Enemies favour rarer materials; scrapping supplies the bulk.</div>
+      <textarea id="g-drops" style="min-height:200px">{
+  "basic_enemy": [
+    { "resource": "electronics", "min": 1, "max": 1, "chance": 0.45 },
+    { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.15 }
+  ],
+  "swarmer": [ { "resource": "raw_scrap", "min": 1, "max": 1, "chance": 0.5 } ],
+  "brute": [
+    { "resource": "raw_scrap", "min": 2, "max": 3, "chance": 1.0 },
+    { "resource": "electronics", "min": 1, "max": 1, "chance": 0.5 },
+    { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.25 }
+  ],
+  "shooter": [
+    { "resource": "electronics", "min": 1, "max": 1, "chance": 0.8 },
+    { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.2 }
+  ]
+}</textarea>
+    </div>
+
+    <div class="panel" style="grid-column:1/-1">
+      <div class="btns"><button class="primary" id="download2">Download generation.json</button><button id="copy2">Copy JSON</button></div>
+      <div class="hint">Exports the full <code>generation.json</code> (shape + all gameplay above). Save to <code>data/game/generation.json</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- DATA-EDITOR TABS -->
+<section class="view" id="view-enemies">
+  <div class="panel">
+    <h2>enemies.json</h2>
+    <div class="hint">Enemy stats &amp; behaviour. Edit and export to <code>data/game/enemies.json</code>. (Room enemy mix lives in <code>area.json</code> → <code>enemy_weights</code>.)</div>
+    <textarea id="ed-enemies"></textarea>
+    <div class="btns"><button class="primary" data-dl="enemies.json" data-src="ed-enemies">Download</button><button data-copy="ed-enemies">Copy</button></div>
+  </div>
+</section>
+<section class="view" id="view-abilities">
+  <div class="panel">
+    <h2>abilities.json</h2>
+    <div class="hint">Ability cooldowns &amp; effects. Edit and export to <code>data/game/abilities.json</code>.</div>
+    <textarea id="ed-abilities"></textarea>
+    <div class="btns"><button class="primary" data-dl="abilities.json" data-src="ed-abilities">Download</button><button data-copy="ed-abilities">Copy</button></div>
+  </div>
+</section>
+<section class="view" id="view-resources">
+  <div class="panel">
+    <h2>recipes.json</h2>
+    <div class="hint">Manufacturing costs. Export to <code>data/game/recipes.json</code>.</div>
+    <textarea id="ed-recipes"></textarea>
+    <div class="btns"><button class="primary" data-dl="recipes.json" data-src="ed-recipes">Download</button><button data-copy="ed-recipes">Copy</button></div>
+    <h2 style="margin-top:18px">buildables.json</h2>
+    <div class="hint">Buildable costs. Export to <code>data/game/buildables.json</code>.</div>
+    <textarea id="ed-buildables"></textarea>
+    <div class="btns"><button class="primary" data-dl="buildables.json" data-src="ed-buildables">Download</button><button data-copy="ed-buildables">Copy</button></div>
+  </div>
+</section>
+
+<script>
+// ---------- tabs ----------
+document.querySelectorAll(".tab").forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");
+    document.getElementById("view-"+t.dataset.tab).classList.add("active");
+  };
+});
+
+// ---------- seeded rng ----------
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+// ---------- generation params ----------
+const P={seed:1,gw:10,gh:8,cs:6,rc:20,rmin:4,rmax:7,loop:15,dw:1,
+  rtw:{combat:4,salvage:2,hazard:1,spawner:1,workshop:1},
+  ew:{basic_enemy:5,swarmer:3,brute:2,shooter:2},emin:2,emax:4};
+const ctl={seed:"seed",gw:"gw",gh:"gh",cs:"cs",rc:"rc",rmin:"rmin",rmax:"rmax",loop:"loop",dw:"dw"};
+const RTW=["combat","salvage","hazard","spawner","workshop"];
+const EW=["basic_enemy","swarmer","brute","shooter"];
+const TYPE_COLORS={start:"#6699ff",objective:"#f2cc4d",combat:"#8c8c99",salvage:"#4dcccc",hazard:"#e6804d",spawner:"#b366e6",workshop:"#d9d98c"};
+
+function readControls(){
+  for(const k in ctl){const el=document.getElementById(ctl[k]); P[k]=parseInt(el.value,10)||0;}
+  document.getElementById("v-seed").textContent=P.seed;
+  document.getElementById("v-gw").textContent=P.gw;
+  document.getElementById("v-gh").textContent=P.gh;
+  document.getElementById("v-cs").textContent=P.cs;
+  document.getElementById("v-rc").textContent=P.rc;
+  document.getElementById("v-rmin").textContent=P.rmin;
+  document.getElementById("v-rmax").textContent=P.rmax;
+  document.getElementById("v-loop").textContent=P.loop+"%";
+  document.getElementById("v-dw").textContent=P.dw;
+  for(const k of RTW){const el=document.getElementById("w-"+k);P.rtw[k]=parseInt(el.value,10)||0;document.getElementById("v-w-"+k).textContent=P.rtw[k];}
+  for(const k of EW){const el=document.getElementById("e-"+k);P.ew[k]=parseInt(el.value,10)||0;document.getElementById("v-e-"+k).textContent=P.ew[k];}
+  P.emin=parseInt(document.getElementById("emin").value,10)||0;
+  P.emax=parseInt(document.getElementById("emax").value,10)||0;
+  document.getElementById("v-emm").textContent=P.emin+"–"+P.emax;
+}
+
+// ---------- generator (mirror this in Godot) ----------
+function generate(P){
+  const rng=mulberry32(P.seed>>>0);
+  const W=P.gw,H=P.gh,N=W*H;
+  const idx=(x,y)=>y*W+x;
+  const inb=(x,y)=>x>=0&&y>=0&&x<W&&y<H;
+  const NB=[[1,0],[-1,0],[0,1],[0,-1]];
+
+  const cell=new Int32Array(N).fill(-1);
+  const roomCount=Math.max(1,Math.min(P.rc,N));
+
+  // seed cells (distinct)
+  const order=[...Array(N).keys()];
+  for(let i=N-1;i>0;i--){const j=(rng()*(i+1))|0;[order[i],order[j]]=[order[j],order[i]];}
+  const seeds=order.slice(0,roomCount);
+  const targets=seeds.map(()=>P.rmin+((rng()*(Math.max(P.rmin,P.rmax)-P.rmin+1))|0));
+  const counts=new Array(roomCount).fill(1);
+  seeds.forEach((s,i)=>cell[s]=i);
+
+  // region growing
+  let grew=true,guard=0;
+  while(grew && guard++<N*6){
+    grew=false;
+    const ro=[...Array(roomCount).keys()];
+    for(let i=ro.length-1;i>0;i--){const j=(rng()*(i+1))|0;[ro[i],ro[j]]=[ro[j],ro[i]];}
+    for(const r of ro){
+      if(counts[r]>=targets[r]) continue;
+      // collect unclaimed neighbours of room r
+      const cand=[];
+      for(let c=0;c<N;c++){ if(cell[c]!==r) continue; const x=c%W,y=(c/W)|0;
+        for(const[dx,dy]of NB){const nx=x+dx,ny=y+dy; if(inb(nx,ny)&&cell[idx(nx,ny)]===-1) cand.push(idx(nx,ny));}}
+      if(cand.length){cell[cand[(rng()*cand.length)|0]]=r;counts[r]++;grew=true;}
+    }
+  }
+  // fill leftovers so the map is fully packed (no gaps / no corridors)
+  let left=true,g2=0;
+  while(left && g2++<N*6){
+    left=false;
+    for(let c=0;c<N;c++){ if(cell[c]!==-1) continue; const x=c%W,y=(c/W)|0; const near=[];
+      for(const[dx,dy]of NB){const nx=x+dx,ny=y+dy; if(inb(nx,ny)&&cell[idx(nx,ny)]>=0) near.push(cell[idx(nx,ny)]);}
+      if(near.length){cell[c]=near[(rng()*near.length)|0];} else {left=true;} }
+  }
+
+  // adjacency between rooms
+  const adj=new Map(); // key "a,b" a<b -> true ; also neighbour list
+  const nbr=Array.from({length:roomCount},()=>new Set());
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){const r=cell[idx(x,y)];
+    for(const[dx,dy]of[[1,0],[0,1]]){const nx=x+dx,ny=y+dy; if(!inb(nx,ny))continue; const r2=cell[idx(nx,ny)];
+      if(r2!==r){nbr[r].add(r2);nbr[r2].add(r);}}}
+
+  // spanning tree (BFS) for guaranteed connectivity
+  const connected=new Set();
+  const key=(a,b)=>a<b?a+","+b:b+","+a;
+  const seen=new Array(roomCount).fill(false);
+  const q=[0];seen[0]=true;
+  while(q.length){const r=q.shift(); const list=[...nbr[r]]; for(let i=list.length-1;i>0;i--){const j=(rng()*(i+1))|0;[list[i],list[j]]=[list[j],list[i]];}
+    for(const n of list){ if(!seen[n]){seen[n]=true;connected.add(key(r,n));q.push(n);} }}
+  // extra loop doors
+  for(let a=0;a<roomCount;a++)for(const b of nbr[a]){ if(a<b && !connected.has(key(a,b)) && rng()<P.loop/100) connected.add(key(a,b)); }
+
+  // ----- tile grid -----
+  const C=P.cs, TW=W*C, TH=H*C;
+  const roomAtTile=(tx,ty)=>cell[idx((tx/C)|0,(ty/C)|0)];
+  const isWall=(tx,ty)=>{const r=roomAtTile(tx,ty); for(const[dx,dy]of NB){const nx=tx+dx,ny=ty+dy; if(nx<0||ny<0||nx>=TW||ny>=TH) return true; if(roomAtTile(nx,ny)!==r) return true;} return false;};
+
+  // carve doorways for connected pairs
+  const doors=new Set();
+  for(const c of connected){const[a,b]=c.split(",").map(Number);
+    // border tile pairs (ta in a adjacent to tb in b)
+    const pairs=[];
+    for(let ty=0;ty<TH;ty++)for(let tx=0;tx<TW;tx++){const r=roomAtTile(tx,ty); if(r!==a)continue;
+      for(const[dx,dy]of NB){const nx=tx+dx,ny=ty+dy; if(nx<0||ny<0||nx>=TW||ny>=TH)continue; if(roomAtTile(nx,ny)===b) pairs.push([tx,ty,nx,ny]);}}
+    if(!pairs.length)continue;
+    // pick a start pair, extend along the shared edge for door width
+    const start=pairs[(rng()*pairs.length)|0];
+    const horiz=start[0]!==start[2]; // door passage is horizontal (wall is vertical)
+    for(let k=0;k<P.dw;k++){
+      const off=k;
+      let sel=null;
+      for(const p of pairs){ if(horiz){ if(p[0]===start[0]&&p[1]===start[1]+off) sel=p; } else { if(p[1]===start[1]&&p[0]===start[0]+off) sel=p; } }
+      if(sel){doors.add(sel[0]+","+sel[1]);doors.add(sel[2]+","+sel[3]);}
+    }
+  }
+
+  // start / objective rooms
+  const start=0;
+  // graph distance from start
+  const dist=new Array(roomCount).fill(-1);dist[start]=0;const q2=[start];let far=start;
+  while(q2.length){const r=q2.shift();for(const n of nbr[r]){if(dist[n]<0){dist[n]=dist[r]+1;if(dist[n]>dist[far])far=n;q2.push(n);}}}
+  const objective=far;
+
+  // room types (start=0, objective=farthest, rest weighted by P.rtw)
+  const types=new Array(roomCount).fill("combat");
+  types[start]="start"; types[objective]="objective";
+  const twTot=RTW.reduce((s,k)=>s+(P.rtw[k]||0),0);
+  const pickType=()=>{ if(twTot<=0)return "combat"; let r=rng()*twTot; for(const k of RTW){r-=(P.rtw[k]||0); if(r<0)return k;} return "combat"; };
+  for(let i=0;i<roomCount;i++){ if(i!==start&&i!==objective) types[i]=pickType(); }
+
+  // centroids (tile space)
+  const csum=Array.from({length:roomCount},()=>[0,0,0]);
+  for(let ty=0;ty<TH;ty++)for(let tx=0;tx<TW;tx++){const r=roomAtTile(tx,ty);csum[r][0]+=tx;csum[r][1]+=ty;csum[r][2]++;}
+  const centroid=csum.map(s=>s[2]?[s[0]/s[2],s[1]/s[2]]:[0,0]);
+
+  return {W,H,C,TW,TH,cell,roomCount,counts,connected:[...connected],isWall,doors,start,objective,centroid,types};
+}
+
+// ---------- render ----------
+const cv=document.getElementById("cv"),cx=cv.getContext("2d");
+function roomColor(i,rc){const h=(i*360/Math.max(1,rc)+30)%360;return `hsl(${h} 45% 42%)`;}
+function render(M){
+  const px=Math.max(2,Math.floor(Math.min(700/M.TW,560/M.TH)));
+  cv.width=M.TW*px;cv.height=M.TH*px;
+  cx.clearRect(0,0,cv.width,cv.height);
+  for(let ty=0;ty<M.TH;ty++)for(let tx=0;tx<M.TW;tx++){
+    const dk=tx+","+ty;
+    let col;
+    if(M.doors.has(dk)) col="#e0b23a";
+    else if(M.isWall(tx,ty)) col="#20232e";
+    else {const r=M.cell[((ty/M.C)|0)*M.W+((tx/M.C)|0)]; col=TYPE_COLORS[M.types[r]]||"#8c8c99";}
+    cx.fillStyle=col;cx.fillRect(tx*px,ty*px,px,px);
+  }
+  // markers
+  cx.fillStyle="#fff";cx.font=`bold ${Math.max(10,px*2)}px system-ui`;cx.textAlign="center";cx.textBaseline="middle";
+  cx.fillText("S",M.centroid[M.start][0]*px,M.centroid[M.start][1]*px);
+  cx.fillText("O",M.centroid[M.objective][0]*px,M.centroid[M.objective][1]*px);
+  document.getElementById("stats").textContent=
+    `${M.roomCount} rooms · grid ${M.W}×${M.H} cells · ${M.TW}×${M.TH} tiles · ${M.connected.length} doorways`;
+}
+
+function gnum(id,def){const v=parseFloat(document.getElementById(id).value);return isNaN(v)?def:v;}
+function gjson(id,def){try{return JSON.parse(document.getElementById(id).value);}catch(e){return def;}}
+function repairRewards(){return ["ability","max_health","aegis_rounds"].filter(r=>document.getElementById("g-rw-"+r).checked);}
+
+function exportJSON(){
+  const cfg={generation:{
+    grid_width:P.gw,grid_height:P.gh,cell_size:P.cs,room_count:P.rc,
+    room_min_cells:P.rmin,room_max_cells:P.rmax,loop_chance:P.loop/100,door_width:P.dw,
+    room_type_weights:{...P.rtw},enemy_weights:{...P.ew},min_enemies:P.emin,max_enemies:P.emax,
+    harvest:{per_room_min:gnum("g-h-min",1),per_room_max:gnum("g-h-max",3),charges:gnum("g-h-charges",3),yield:gjson("g-harvest-yield",[])},
+    spawner:{markers:gnum("g-sp-markers",1),base_count:gnum("g-sp-base",3),count_growth:gnum("g-sp-growth",2),base_health:gnum("g-sp-hp",3),base_speed:gnum("g-sp-spd",55),health_per_wave:gnum("g-sp-hpw",1),speed_per_wave:gnum("g-sp-spw",0.05)},
+    repair:{cost:{metal:gnum("g-rp-metal",2)},rewards:repairRewards()},
+    salvage_loot:gjson("g-salvage",[]),
+    resource_drops:gjson("g-drops",{})
+  }};
+  return JSON.stringify(cfg,null,2);
+}
+function updateExport(){document.getElementById("json").value=exportJSON();}
+
+function refresh(){readControls(); const M=generate(P); render(M); document.getElementById("json").value=exportJSON();}
+
+// control bindings
+for(const k in ctl){document.getElementById(ctl[k]).addEventListener("input",refresh);}
+for(const k of RTW)document.getElementById("w-"+k).addEventListener("input",refresh);
+for(const k of EW)document.getElementById("e-"+k).addEventListener("input",refresh);
+document.getElementById("emin").addEventListener("input",refresh);
+document.getElementById("emax").addEventListener("input",refresh);
+document.getElementById("rndseed").onclick=()=>{document.getElementById("seed").value=(Math.random()*100000)|0;refresh();};
+document.getElementById("regen").onclick=()=>{document.getElementById("seed").value=(Math.random()*100000)|0;refresh();};
+
+// download / copy helpers
+function download(name,text){const b=new Blob([text],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove();}
+document.getElementById("download").onclick=()=>download("generation.json",exportJSON());
+document.getElementById("copy").onclick=()=>navigator.clipboard&&navigator.clipboard.writeText(exportJSON());
+document.getElementById("download2").onclick=()=>download("generation.json",exportJSON());
+document.getElementById("copy2").onclick=()=>navigator.clipboard&&navigator.clipboard.writeText(exportJSON());
+// keep the exported JSON in sync when gameplay fields change
+document.querySelectorAll("#view-gameplay input, #view-gameplay textarea").forEach(el=>el.addEventListener("input",updateExport));
+
+// data-editor tabs
+const DEFAULTS={
+ "ed-enemies":`{
+  "enemies": {
+    "basic_enemy": {"name":"Grunt","sprite":"enemy_basic","color":"d46d6d","size":16,"health":3,"speed":55,"behavior":"melee","melee":{"range":26,"damage":1,"interval":1.0}},
+    "swarmer": {"name":"Swarmer","sprite":"enemy_swarmer","color":"e0a53a","size":12,"health":2,"speed":95,"behavior":"melee","melee":{"range":22,"damage":1,"interval":0.8}},
+    "brute": {"name":"Brute","sprite":"enemy_brute","color":"8a4fd4","size":26,"health":9,"speed":34,"behavior":"melee","melee":{"range":32,"damage":2,"interval":1.3}},
+    "shooter": {"name":"Shooter","sprite":"enemy_shooter","color":"4fae6b","size":18,"health":3,"speed":45,"behavior":"ranged","ranged":{"range":220,"desired_distance":140,"damage":1,"interval":1.6,"projectile_speed":200}}
+  }
+}`,
+ "ed-abilities":`{
+  "abilities": {
+    "emp": {"name":"EMP","desc":"Disables and lightly damages nearby enemies.","starter":true,"cooldown":6.0,"radius":140,"damage":1,"disable_seconds":2.5},
+    "shield": {"name":"Shield","desc":"A few seconds of protection.","starter":true,"cooldown":8.0,"duration":3.0},
+    "regen": {"name":"Regen","desc":"Restore some health.","starter":true,"cooldown":10.0,"amount":4},
+    "overload": {"name":"Overload","desc":"A burst that heavily damages nearby enemies.","starter":false,"cooldown":7.0,"radius":150,"damage":4}
+  }
+}`,
+ "ed-recipes":`{
+  "recipes": {
+    "power_cell": {"name":"Power Cell","icon":"power_cell","inputs":{"metal":2,"electronics":1},"output":"power_cell","output_amount":1,"seconds":4.0},
+    "circuit_board": {"name":"Circuit Board","icon":"circuit_board","inputs":{"metal":1,"electronics":2},"output":"circuit_board","output_amount":1,"seconds":4.0}
+  }
+}`,
+ "ed-buildables":`{
+  "buildables": {
+    "respawn_beacon": {"name":"Respawn Beacon","icon":"respawn_beacon","color":"3ad6a2","cost":{"metal":3},"uses":2},
+    "extraction_beacon": {"name":"Extraction Beacon","icon":"extraction_beacon","color":"e6a13a","cost":{"metal":5,"electronics":2}},
+    "fabricator": {"name":"Fabricator","icon":"fabricator","color":"4f7fae","cost":{"metal":4,"electronics":1}}
+  }
+}`
+};
+for(const id in DEFAULTS){document.getElementById(id).value=DEFAULTS[id];}
+document.querySelectorAll("[data-dl]").forEach(b=>b.onclick=()=>download(b.dataset.dl,document.getElementById(b.dataset.src).value));
+document.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>navigator.clipboard&&navigator.clipboard.writeText(document.getElementById(b.dataset.copy).value));
+
+refresh();
+</script>
+</body>
+</html>

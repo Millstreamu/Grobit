@@ -72,6 +72,7 @@ class ProjectStructureTests(unittest.TestCase):
             "tech.json",
             "enemies.json",
             "abilities.json",
+            "generation.json",
             "area.json",
         ):
             path = ROOT / "data" / "game" / name
@@ -94,9 +95,13 @@ class ProjectStructureTests(unittest.TestCase):
             "scripts/world/run_controller.gd",
             "scripts/world/hazard_zone.gd",
             "scripts/world/spawner.gd",
+            "scripts/world/interactable_object.gd",
+            "scripts/world/scrap_node.gd",
+            "scripts/world/repair_station.gd",
             "scripts/build/build_manager.gd",
             "scripts/build/respawn_beacon.gd",
             "scripts/build/extraction_beacon.gd",
+            "scripts/build/fabricator.gd",
             "scripts/machines/recycler_system.gd",
             "scripts/machines/manufacturing.gd",
             "scripts/machines/power_generator.gd",

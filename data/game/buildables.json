@@ -13,6 +13,12 @@
       "icon": "extraction_beacon",
       "color": "e6a13a",
       "cost": { "metal": 5, "electronics": 2 }
+    },
+    "fabricator": {
+      "name": "Fabricator",
+      "icon": "fabricator",
+      "color": "4f7fae",
+      "cost": { "metal": 4, "electronics": 1 }
     }
   }
 }

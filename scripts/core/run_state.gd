@@ -44,11 +44,13 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 	result = RESULT_NONE
 	run_active = true
 
-	# Ability is chosen at the start of each run; all abilities available for now.
+	# Ability is chosen at the start of each run. Only "starter" abilities are
+	# available up front; others are unlocked mid-run (e.g. by repairing equipment).
 	equipped_ability = ""
 	available_abilities.clear()
 	for ability_id: String in GameData.abilities:
-		available_abilities.append(ability_id)
+		if bool(GameData.abilities[ability_id].get("starter", true)):
+			available_abilities.append(ability_id)
 
 	slots.clear()
 	for i in CAPACITY:
@@ -152,6 +154,22 @@ func _feed_recycler(source: Dictionary, target: Dictionary, from_index: int) -> 
 
 
 # --------------------------------------------------------- quantities ----
+
+## Makes an ability choosable this run. Returns false if already available.
+func unlock_ability(ability_id: String) -> bool:
+	if ability_id.is_empty() or available_abilities.has(ability_id):
+		return false
+	available_abilities.append(ability_id)
+	return true
+
+
+## An ability id the player has NOT yet unlocked this run, or "" if none remain.
+func first_locked_ability() -> String:
+	for ability_id: String in GameData.abilities:
+		if not available_abilities.has(ability_id):
+			return ability_id
+	return ""
+
 
 func get_quantity(resource_id: String) -> int:
 	var count := 0

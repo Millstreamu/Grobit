@@ -14,6 +14,7 @@ var buildables: Dictionary = {}
 var tech: Dictionary = {}
 var enemies: Dictionary = {}
 var abilities: Dictionary = {}
+var generation: Dictionary = {}
 var areas: Dictionary = {}
 
 
@@ -25,6 +26,8 @@ func _ready() -> void:
 	tech = _load("tech.json").get("tech", {})
 	enemies = _load("enemies.json").get("enemies", {})
 	abilities = _load("abilities.json").get("abilities", {})
+	# Map-shape parameters authored in the Config Studio tool (optional file).
+	generation = _load("generation.json").get("generation", {})
 	areas = _load("area.json").get("areas", {})
 
 

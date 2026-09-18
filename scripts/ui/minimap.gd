@@ -4,9 +4,9 @@ extends Control
 ## by its grid slot, with connection lines, the current room highlighted, and the
 ## Power Generator marked. Colours encode room type / cleared state.
 
-const CELL := 16.0   # spacing between room centres
-const BOX := 11.0    # room square size
-const MARGIN := Vector2(10, 20)
+const CELL := 14.0   # pixels per cell-grid unit
+const BOX := 10.0    # room marker size
+const MARGIN := Vector2(10, 22)
 
 var _rooms: Array[Room] = []
 var _edges: Array = []
@@ -28,34 +28,32 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if _rooms.is_empty():
 		return
-	var min_slot := _rooms[0].slot
-	var max_slot := _rooms[0].slot
+	var min_p := _rooms[0].map_position
+	var max_p := _rooms[0].map_position
 	for room: Room in _rooms:
-		min_slot = min_slot.min(room.slot)
-		max_slot = max_slot.max(room.slot)
+		min_p = min_p.min(room.map_position)
+		max_p = max_p.max(room.map_position)
 
-	var span := max_slot - min_slot
+	var span := max_p - min_p
 	var bg_size := Vector2((span.x + 1) * CELL + MARGIN.x, (span.y + 1) * CELL + MARGIN.y) + MARGIN
 	draw_rect(Rect2(Vector2.ZERO, bg_size), Color(0.05, 0.05, 0.08, 0.8))
-	draw_string(get_theme_default_font(), Vector2(MARGIN.x, 14), "MAP", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.8, 0.8, 0.85))
+	draw_string(get_theme_default_font(), Vector2(MARGIN.x, 15), "MAP", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.8, 0.8, 0.85))
 
-	# Connections underneath the room cells.
+	# Connections underneath the room markers.
 	for edge: Array in _edges:
-		var a := _slot_to_local(edge[0], min_slot)
-		var b := _slot_to_local(edge[1], min_slot)
-		draw_line(a, b, Color(0.5, 0.5, 0.55), 2.0)
+		draw_line(_pos_to_local(edge[0], min_p), _pos_to_local(edge[1], min_p), Color(0.5, 0.5, 0.55), 1.5)
 
 	var current := _current_room()
 	for room: Room in _rooms:
-		var pos := _slot_to_local(room.slot, min_slot)
+		var pos := _pos_to_local(room.map_position, min_p)
 		var rect := Rect2(pos - Vector2(BOX, BOX) * 0.5, Vector2(BOX, BOX))
 		draw_rect(rect, _room_color(room))
 		if room == current:
 			draw_rect(rect.grow(1.5), Color.WHITE, false, 1.5)
 
 
-func _slot_to_local(slot: Vector2i, min_slot: Vector2i) -> Vector2:
-	return MARGIN + Vector2((slot.x - min_slot.x) * CELL, (slot.y - min_slot.y) * CELL) + Vector2(BOX, BOX) * 0.5
+func _pos_to_local(p: Vector2, min_p: Vector2) -> Vector2:
+	return MARGIN + (p - min_p) * CELL + Vector2(BOX, BOX) * 0.5
 
 
 func _current_room() -> Room:
@@ -65,8 +63,6 @@ func _current_room() -> Room:
 	var nearest: Room
 	var nearest_distance := INF
 	for room: Room in _rooms:
-		if room.interior_rect.has_point(player.global_position):
-			return room
 		var distance := room.center().distance_to(player.global_position)
 		if distance < nearest_distance:
 			nearest_distance = distance
@@ -86,6 +82,8 @@ func _room_color(room: Room) -> Color:
 			return Color(0.90, 0.50, 0.30) if not room.is_cleared else Color(0.45, 0.70, 0.45)
 		Room.RoomType.SPAWNER:
 			return Color(0.70, 0.40, 0.90)
+		Room.RoomType.WORKSHOP:
+			return Color(0.85, 0.85, 0.55)
 		_:  # COMBAT
 			return Color(0.45, 0.80, 0.45) if room.is_cleared else Color(0.55, 0.55, 0.60)
 

@@ -42,14 +42,13 @@ func _on_body_exited(body: Node) -> void:
 		_armed = false
 
 
-func _process(_delta: float) -> void:
+func interact() -> void:
 	if not _in_range:
 		return
-	if Input.is_action_just_pressed("interact"):
-		if not _armed:
-			_armed = true
-		else:
-			extract_confirmed.emit()
+	if not _armed:
+		_armed = true
+	else:
+		extract_confirmed.emit()
 
 
 func selection_size() -> int:

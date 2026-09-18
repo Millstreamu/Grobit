@@ -68,6 +68,8 @@ func _ready() -> void:
 
 	if OS.has_environment("GROBIT_DEBUG_ENEMIES"):
 		_debug_spawn_enemies()
+	if OS.has_environment("GROBIT_DEBUG_LOOT"):
+		_debug_spawn_loot()
 
 	# Report which artwork is still using placeholders (all icons now requested).
 	ContentLibrary.print_missing_report.call_deferred()
@@ -83,6 +85,23 @@ func _debug_spawn_enemies() -> void:
 		e.global_position = player.global_position + Vector2(60 + i * 34, 30)
 		add_child(e)
 		i += 1
+
+
+# Debug helper (env-gated): a scrap node + repair station beside the start.
+func _debug_spawn_loot() -> void:
+	var node := ScrapNode.new()
+	node.yield_table = [{"resource": "raw_scrap", "min": 1, "max": 2, "chance": 1.0}]
+	node.charges = 3
+	add_child(node)
+	node.global_position = player.global_position + Vector2(44, 0)
+	var station := RepairStation.new()
+	station.cost = {"metal": 2}
+	station.reward = "ability"
+	add_child(station)
+	station.global_position = player.global_position + Vector2(-44, 0)
+	var fab := Fabricator.new()
+	add_child(fab)
+	fab.global_position = player.global_position + Vector2(0, -48)
 
 
 func _spawn_objective() -> void:

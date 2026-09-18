@@ -110,6 +110,11 @@ func heal(amount: int) -> void:
 		health.heal(amount)
 
 
+func increase_max_health(amount: int) -> void:
+	if health != null:
+		health.add_max_health(amount)
+
+
 func activate_shield(seconds: float) -> void:
 	_shield_seconds = maxf(_shield_seconds, seconds)
 

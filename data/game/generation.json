@@ -1,0 +1,12 @@
+{
+  "generation": {
+    "grid_width": 10,
+    "grid_height": 8,
+    "cell_size": 6,
+    "room_count": 20,
+    "room_min_cells": 4,
+    "room_max_cells": 7,
+    "loop_chance": 0.15,
+    "door_width": 1
+  }
+}

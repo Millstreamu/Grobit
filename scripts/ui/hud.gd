@@ -73,6 +73,20 @@ func _process(_delta: float) -> void:
 	_handle_toggles()
 
 
+## Opens the ability chooser mid-run (e.g. after unlocking one by repairing).
+func open_ability_choice() -> void:
+	if _ability_choice != null:
+		_ability_choice.open()
+
+
+## Manufacturing requires a built Fabricator (interact with one, or press M near/with one).
+func open_manufacture() -> void:
+	if get_tree().get_nodes_in_group("fabricators").is_empty():
+		log_message("Build a Fabricator to manufacture components.")
+		return
+	_manufacture.open()
+
+
 func log_message(text: String) -> void:
 	_messages.append({"text": text, "expires": Time.get_ticks_msec() + 4000})
 	if _messages.size() > 5:
@@ -109,7 +123,7 @@ func _handle_toggles() -> void:
 		_inventory.open()
 		return
 	if Input.is_action_just_pressed("toggle_manufacture"):
-		_manufacture.open()
+		open_manufacture()
 		return
 
 
@@ -176,10 +190,16 @@ func _resource_line() -> String:
 
 
 func _interaction_prompt() -> String:
+	var best: Node2D
+	var best_distance := INF
 	for node: Node in get_tree().get_nodes_in_group("interactables"):
-		if node.has_method("can_interact") and node.can_interact():
-			return node.interaction_prompt()
-	return ""
+		if not node is Node2D or not node.has_method("can_interact") or not node.can_interact():
+			continue
+		var distance := _player.global_position.distance_to((node as Node2D).global_position)
+		if distance < best_distance:
+			best_distance = distance
+			best = node
+	return best.interaction_prompt() if best != null else ""
 
 
 func _summary_text() -> String:

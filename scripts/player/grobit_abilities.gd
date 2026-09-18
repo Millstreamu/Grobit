@@ -54,6 +54,8 @@ func use() -> bool:
 			_player().activate_shield(float(_def.get("duration", 3.0)))
 		"regen":
 			_player().heal(int(_def.get("amount", 4)))
+		"overload":
+			_damage_nearby(float(_def.get("radius", 150.0)), int(_def.get("damage", 4)), 0.0)
 		_:
 			return false
 	_cooldown = float(_def.get("cooldown", 6.0))
@@ -62,17 +64,21 @@ func use() -> bool:
 
 
 func _use_emp() -> void:
+	_damage_nearby(float(_def.get("radius", 140.0)), int(_def.get("damage", 1)), float(_def.get("disable_seconds", 2.5)))
+
+
+# Affects every enemy within radius: optional disable, then damage.
+func _damage_nearby(radius: float, damage: int, disable_seconds: float) -> void:
 	var origin := _player().global_position
-	var radius := float(_def.get("radius", 140.0))
 	for enemy: Node in get_tree().get_nodes_in_group("enemies"):
 		if not enemy is Node2D:
 			continue
 		if origin.distance_to((enemy as Node2D).global_position) > radius:
 			continue
-		if enemy.has_method("disable"):
-			enemy.disable(float(_def.get("disable_seconds", 2.5)))
+		if disable_seconds > 0.0 and enemy.has_method("disable"):
+			enemy.disable(disable_seconds)
 		if enemy.has_method("take_damage"):
-			enemy.take_damage(int(_def.get("damage", 1)))
+			enemy.take_damage(damage)
 
 
 func _player() -> GrobitPlayer:

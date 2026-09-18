@@ -4,6 +4,7 @@
     "emp": {
       "name": "EMP",
       "desc": "Disables and lightly damages nearby enemies.",
+      "starter": true,
       "cooldown": 6.0,
       "radius": 140,
       "damage": 1,
@@ -12,14 +13,24 @@
     "shield": {
       "name": "Shield",
       "desc": "A few seconds of protection.",
+      "starter": true,
       "cooldown": 8.0,
       "duration": 3.0
     },
     "regen": {
       "name": "Regen",
       "desc": "Restore some health.",
+      "starter": true,
       "cooldown": 10.0,
       "amount": 4
+    },
+    "overload": {
+      "name": "Overload",
+      "desc": "A burst that heavily damages nearby enemies. (Unlock by repairing equipment.)",
+      "starter": false,
+      "cooldown": 7.0,
+      "radius": 150,
+      "damage": 4
     }
   }
 }

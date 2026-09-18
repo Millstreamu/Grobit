@@ -27,6 +27,11 @@ func _ready() -> void:
 	_aegis = MetaState.has_tech("aegis_rounds")
 
 
+## Turns on the Aegis Rounds shoot upgrade for this run (e.g. a repair reward).
+func enable_aegis() -> void:
+	_aegis = true
+
+
 func _process(delta: float) -> void:
 	_cooldown_remaining = maxf(_cooldown_remaining - delta, 0.0)
 	if not _can_act():
