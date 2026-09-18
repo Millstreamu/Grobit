@@ -4,6 +4,8 @@ extends Node2D
 ## No corridors: rooms are irregular unions of grid CELLS (complex shapes) grown
 ## to fill a W×H cell grid, packed together. Adjacent rooms share a 2-tile wall
 ## with carved DOORWAYS at connections (spanning tree + loop_chance extra loops).
+## Each passage has one grid-aligned door tile and one open approach tile; doors
+## are never positioned on the half-tile boundary between rooms.
 ## Map-shape params come from data/game/generation.json (GameData.generation);
 ## gameplay params (enemy counts, room-type mix, harvest/repair/etc.) from area.json.
 
@@ -292,6 +294,7 @@ func _build_rooms(run_seed: int, room_count: int, types: Array, enemy_min: int, 
 		room.name = "Room_%d" % i
 		room.room_type = types[i]
 		room.cell_pixels = float(_C * tile)
+		room.tile_size = float(tile)
 		room.cells.assign(cell_lists[i])
 		var count: int = maxi(1, cell_lists[i].size())
 		room.map_position = centroids[i] / count
@@ -327,14 +330,14 @@ func _render_tiles() -> void:
 			else:
 				_add_floor(floor_texture, world)
 				rooms[r].interior_tiles.append(world)
-	# A doorway belongs to both adjacent rooms. Sharing the same Door ensures
-	# either room locks the one physical barrier instead of creating two in series.
+	# A doorway belongs to both adjacent rooms. One of the two former wall tiles is
+	# the grid-aligned door and the other is its open approach. Sharing that Door
+	# ensures either room locks the one physical barrier instead of making two.
 	for doorway: Array in _doorways:
 		var door := Door.new()
 		_doors_root.add_child(door)
 		var tile_a: Vector2i = doorway[2]
-		var tile_b: Vector2i = doorway[3]
-		door.global_position = (Vector2(tile_a) + Vector2(tile_b)) * tile * 0.5 + Vector2.ONE * tile * 0.5
+		door.global_position = Vector2(tile_a) * tile + Vector2.ONE * tile * 0.5
 		rooms[doorway[0]].doors.append(door)
 		rooms[doorway[1]].doors.append(door)
 	# Player starts in the middle of the start room.

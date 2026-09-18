@@ -20,5 +20,23 @@ func _initialize() -> void:
 	await process_frame
 	assert(room.get_node("Tiles").get_child_count() == 20 * 14)
 	assert(room.get_node("Walls").get_child_count() == 4)
+
+	# Room entry must wait until the player's complete collision body has cleared
+	# the door/approach tiles and reached the safe inset of an interior floor tile.
+	var generated_room := Room.new()
+	generated_room.interior_tiles = [Vector2(100.0, 100.0)]
+	generated_room.enemy_min = 0
+	generated_room.enemy_max = 0
+	root.add_child(generated_room)
+	var entering_player := CharacterBody2D.new()
+	entering_player.add_to_group("player")
+	entering_player.global_position = Vector2(80.0, 100.0)
+	root.add_child(entering_player)
+	generated_room._on_body_entered(entering_player)
+	generated_room._physics_process(0.0)
+	assert(not generated_room.is_cleared)
+	entering_player.global_position = Vector2(100.0, 100.0)
+	generated_room._physics_process(0.0)
+	assert(generated_room.is_cleared)
 	print("Movement prototype integration tests passed.")
 	quit()

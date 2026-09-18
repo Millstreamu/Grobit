@@ -27,7 +27,7 @@ func _initialize() -> void:
 	assert(room.get_node_or_null("Projectile") != null)
 	enemy.take_damage(enemy.max_health)
 	await process_frame
-	var pickup := room.get_node_or_null("ScrapPickup") as ScrapPickup
+	var pickup := room.get_node_or_null("ScrapPickup") as ResourcePickup
 	assert(pickup != null)
 	assert(pickup.sprite.texture != null)
 	pickup._on_body_entered(player)

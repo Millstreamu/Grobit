@@ -357,7 +357,7 @@ function generate(P){
       let sel=null;
       for(const p of pairs){ if(horiz){ if(p[0]===start[0]&&p[1]===start[1]+off) sel=p; } else { if(p[1]===start[1]&&p[0]===start[0]+off) sel=p; } }
       if(sel){
-        // Carve both wall tiles, then place one shared door at their boundary.
+        // Carve both wall tiles: one is the grid-aligned door, one its approach.
         doorFloors.add(sel[0]+","+sel[1]);doorFloors.add(sel[2]+","+sel[3]);
         doors.push(sel);
       }
@@ -401,11 +401,10 @@ function render(M){
     else {const r=M.cell[((ty/M.C)|0)*M.W+((tx/M.C)|0)]; col=TYPE_COLORS[M.types[r]]||"#8c8c99";}
     cx.fillStyle=col;cx.fillRect(tx*px,ty*px,px,px);
   }
-  // Draw one marker centered between each adjacent pair of carved wall tiles.
+  // Draw the door in the first carved wall tile, aligned to the tile grid.
   cx.fillStyle="#e0b23a";
   for(const d of M.doors){
-    const mx=(d[0]+d[2]+1)*px/2,my=(d[1]+d[3]+1)*px/2;
-    cx.fillRect(mx-px/2,my-px/2,px,px);
+    cx.fillRect(d[0]*px,d[1]*px,px,px);
   }
   // markers
   cx.fillStyle="#fff";cx.font=`bold ${Math.max(10,px*2)}px system-ui`;cx.textAlign="center";cx.textBaseline="middle";
