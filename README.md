@@ -29,7 +29,7 @@ artwork.
 | WASD | Move (in build mode: move the placement cursor) |
 | Space | Use your equipped ability (chosen at run start); in build mode: place; in menus: confirm |
 | Tab | Switch shooting target (cycles enemies in range) |
-| I | Open/close the grid inventory (WASD move cursor, Space pick up/drop, drop scrap on the recycler to feed it) |
+| I | Open/close the grid inventory (WASD move cursor, Space select/drop; select matching resources to stack them, then drop one at a time) |
 | M | Toggle manufacturing panel (number keys build recipes) |
 | B | Toggle build mode (1/2 select, WASD move cursor, Space place, B/Esc exit) |
 | F | Interact with the nearest object (harvest scrap, pick up drops, use a Fabricator, repair equipment, deposit at / extract) |
@@ -46,8 +46,10 @@ a damage zone), and **spawner** (doors lock and a wave spawns; clear it to
 unlock, then leaving and returning re-arms a fresh, bigger wave). A HUD
 **minimap** shows room types, cleared state, your position, and the objective.
 
-The inventory is a fixed **grid of single-item slots** (no stacking) — capacity
-matters, and a full inventory leaves pickups on the ground until you free space.
+The inventory is a fixed **grid of single-item slots**, so capacity matters and a
+full inventory leaves pickups on the ground until you free space. In the inventory
+window, matching resources can be grouped into one temporary selection; each press
+when dropping places one unit, making it easy to feed several units to a recycler.
 The **Scrap Recycler is a module occupying a slot**: recycling only happens when
 you move raw scrap onto it, after which it processes over time and drops the
 output into a free slot. Manufacturing likewise needs a free slot for its output.
@@ -96,6 +98,7 @@ godot --headless --path . --import
 godot --headless --path . --script tests/content_loader_test.gd
 godot --headless --path . --script tests/movement_test.gd
 godot --headless --path . --script tests/combat_test.gd
+godot --headless --path . scenes/test/inventory_selection_test.tscn
 ```
 
 The first combat-loop tuning values are exported in the Inspector: enemy
