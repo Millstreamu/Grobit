@@ -1,9 +1,9 @@
 class_name InventoryPanel
 extends Control
-## Full-window, keyboard-driven grid inventory. No stacking — one item per slot.
-## Move a cursor with WASD, press Space to pick up an item, then Space on another
-## slot to move/swap it. Dropping raw scrap onto the Scrap Recycler module feeds
-## it (the recycler then processes over time and outputs into a free slot).
+## Full-window, keyboard-driven grid inventory. Slots hold one item, but a player
+## can select several units of the same resource before dropping them one at a
+## time. Dropping raw scrap onto the Scrap Recycler module feeds one selected
+## unit per press (the recycler then processes it into a free slot).
 ##
 ## Opening pauses the game so it acts as a modal screen. Placeholder art: cells
 ## are plain coloured squares until real slot/background art exists.
@@ -14,7 +14,7 @@ const CELL := 54.0
 const GAP := 10.0
 
 var _cursor := 0
-var _source := -1
+var _sources: Array[int] = []
 var _font: Font
 
 
@@ -50,7 +50,7 @@ func is_open() -> bool:
 func open() -> void:
 	visible = true
 	_cursor = 0
-	_source = -1
+	_sources.clear()
 	get_tree().paused = true
 	queue_redraw()
 
@@ -81,14 +81,31 @@ func _handle_input() -> void:
 
 
 func _activate() -> void:
-	if _source == -1:
-		if not RunState.slot_is_empty(_cursor):
-			_source = _cursor
-	elif _source == _cursor:
-		_source = -1
-	else:
-		RunState.move_slot(_source, _cursor)
-		_source = -1
+	var slot := RunState.get_slot(_cursor)
+	if _sources.is_empty():
+		if not slot.is_empty():
+			_sources.append(_cursor)
+		return
+
+	# Pressing a selected cell again removes just that unit from the selection.
+	if _sources.has(_cursor):
+		_sources.erase(_cursor)
+		return
+
+	var selected := RunState.get_slot(_sources[0])
+	# Matching resources join the current selection instead of swapping. Modules
+	# remain single selections, since only resource units can be stacked.
+	if selected.get("kind", "") == "resource" \
+			and slot.get("kind", "") == "resource" \
+			and String(selected.get("id", "")) == String(slot.get("id", "")):
+		_sources.append(_cursor)
+		return
+
+	# A drop always moves one selected unit. Keeping the remaining source indexes
+	# selected lets repeated Space presses feed a recycler one unit at a time.
+	var source := _sources[0]
+	if RunState.move_slot(source, _cursor):
+		_sources.remove_at(0)
 
 
 func _draw() -> void:
@@ -109,7 +126,7 @@ func _draw() -> void:
 
 	# Info line for the slot under the cursor.
 	draw_string(_font, Vector2(20, origin.y + grid_h + 40), _cursor_info(), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.95, 0.7))
-	var hint := "[WASD] move   [Space] pick up / drop   drop scrap on the recycler to feed it   [I]/[Esc] close"
+	var hint := "[WASD] move   [Space] select / drop one   select matching items to stack   [I]/[Esc] close"
 	draw_string(_font, Vector2(20, PANEL_SIZE.y - 16), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.7, 0.7, 0.75))
 
 
@@ -138,13 +155,18 @@ func _draw_cell(index: int, cell: Rect2) -> void:
 		var ratio := clampf(float(slot.get("progress", 0.0)) / maxf(0.01, float(def.get("seconds", 3.0))), 0.0, 1.0)
 		draw_rect(Rect2(cell.position + Vector2(4, CELL - 8), Vector2((CELL - 8) * ratio, 4)), Color(0.4, 0.9, 0.5))
 
-	if index == _source:
+	if _sources.has(index):
 		draw_rect(cell.grow(1), Color(1.0, 0.85, 0.2), false, 2.0)
 	if index == _cursor:
 		draw_rect(cell.grow(2), Color.WHITE, false, 2.0)
 
 
 func _cursor_info() -> String:
+	if not _sources.is_empty():
+		var selected := RunState.get_slot(_sources[0])
+		if selected.get("kind", "") == "resource":
+			return "%s x%d selected — Space drops one" % [
+				GameData.resource_name(String(selected.get("id", ""))), _sources.size()]
 	var slot := RunState.get_slot(_cursor)
 	var kind := String(slot.get("kind", ""))
 	if kind == "resource":
@@ -156,6 +178,6 @@ func _cursor_info() -> String:
 			GameData.resource_name(String(def.get("input", ""))),
 			GameData.resource_name(String(def.get("output", ""))),
 			int(slot.get("buffer", 0)), int(def.get("input_amount", 1))]
-	if _source != -1:
+	if not _sources.is_empty():
 		return "Move here"
 	return "Empty"
