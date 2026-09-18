@@ -342,7 +342,7 @@ function generate(P){
   const isWall=(tx,ty)=>{const r=roomAtTile(tx,ty); for(const[dx,dy]of NB){const nx=tx+dx,ny=ty+dy; if(nx<0||ny<0||nx>=TW||ny>=TH) return true; if(roomAtTile(nx,ny)!==r) return true;} return false;};
 
   // carve doorways for connected pairs
-  const doors=new Set();
+  const doorFloors=new Set(),doors=[];
   for(const c of connected){const[a,b]=c.split(",").map(Number);
     // border tile pairs (ta in a adjacent to tb in b)
     const pairs=[];
@@ -356,7 +356,11 @@ function generate(P){
       const off=k;
       let sel=null;
       for(const p of pairs){ if(horiz){ if(p[0]===start[0]&&p[1]===start[1]+off) sel=p; } else { if(p[1]===start[1]&&p[0]===start[0]+off) sel=p; } }
-      if(sel){doors.add(sel[0]+","+sel[1]);doors.add(sel[2]+","+sel[3]);}
+      if(sel){
+        // Carve both wall tiles, then place one shared door at their boundary.
+        doorFloors.add(sel[0]+","+sel[1]);doorFloors.add(sel[2]+","+sel[3]);
+        doors.push(sel);
+      }
     }
   }
 
@@ -379,7 +383,7 @@ function generate(P){
   for(let ty=0;ty<TH;ty++)for(let tx=0;tx<TW;tx++){const r=roomAtTile(tx,ty);csum[r][0]+=tx;csum[r][1]+=ty;csum[r][2]++;}
   const centroid=csum.map(s=>s[2]?[s[0]/s[2],s[1]/s[2]]:[0,0]);
 
-  return {W,H,C,TW,TH,cell,roomCount,counts,connected:[...connected],isWall,doors,start,objective,centroid,types};
+  return {W,H,C,TW,TH,cell,roomCount,counts,connected:[...connected],isWall,doorFloors,doors,start,objective,centroid,types};
 }
 
 // ---------- render ----------
@@ -392,10 +396,16 @@ function render(M){
   for(let ty=0;ty<M.TH;ty++)for(let tx=0;tx<M.TW;tx++){
     const dk=tx+","+ty;
     let col;
-    if(M.doors.has(dk)) col="#e0b23a";
+    if(M.doorFloors.has(dk)) {const r=M.cell[((ty/M.C)|0)*M.W+((tx/M.C)|0)]; col=TYPE_COLORS[M.types[r]]||"#8c8c99";}
     else if(M.isWall(tx,ty)) col="#20232e";
     else {const r=M.cell[((ty/M.C)|0)*M.W+((tx/M.C)|0)]; col=TYPE_COLORS[M.types[r]]||"#8c8c99";}
     cx.fillStyle=col;cx.fillRect(tx*px,ty*px,px,px);
+  }
+  // Draw one marker centered between each adjacent pair of carved wall tiles.
+  cx.fillStyle="#e0b23a";
+  for(const d of M.doors){
+    const mx=(d[0]+d[2]+1)*px/2,my=(d[1]+d[3]+1)*px/2;
+    cx.fillRect(mx-px/2,my-px/2,px,px);
   }
   // markers
   cx.fillStyle="#fff";cx.font=`bold ${Math.max(10,px*2)}px system-ui`;cx.textAlign="center";cx.textBaseline="middle";

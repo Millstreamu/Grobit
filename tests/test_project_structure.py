@@ -188,5 +188,17 @@ class ProjectStructureTests(unittest.TestCase):
                 self.assertTrue((ROOT / relative_path).is_file())
         self.assertIn("attack", load_project_config()["input"])
 
+    def test_generated_passages_use_one_shared_door(self):
+        generator = (ROOT / "scripts/world/area_generator.gd").read_text()
+        self.assertIn("_doorways.append([a, b, p[0], p[1]])", generator)
+        self.assertEqual(generator.count("var door := Door.new()"), 1)
+        self.assertIn("rooms[doorway[0]].doors.append(door)", generator)
+        self.assertIn("rooms[doorway[1]].doors.append(door)", generator)
+
+        studio = (ROOT / "tools/config-studio/index.html").read_text()
+        self.assertIn("const doorFloors=new Set(),doors=[];", studio)
+        self.assertIn("doors.push(sel);", studio)
+        self.assertNotIn("doors.add(sel[0]", studio)
+
 if __name__ == "__main__":
     unittest.main()

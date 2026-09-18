@@ -22,7 +22,8 @@ var _C := 5
 var _TW := 0
 var _TH := 0
 var _cell: Array = []          # room index per grid cell
-var _doors: Dictionary = {}    # Vector2i tile -> true (carved openings)
+var _door_floors: Dictionary = {}  # both wall tiles carved for each passage
+var _doorways: Array = []           # [room a, room b, tile a, tile b] per shared door
 
 var _floors: Node2D
 var _wall_sprites: Node2D
@@ -234,6 +235,8 @@ func _farthest_room(room_count: int, neighbours: Array, from_room: int) -> int:
 # --------------------------------------------------------------- doors ----
 
 func _carve_doors(rng: RandomNumberGenerator, connections: Array, door_width: int) -> void:
+	_door_floors.clear()
+	_doorways.clear()
 	for edge: Array in connections:
 		var a: int = edge[0]
 		var b: int = edge[1]
@@ -261,8 +264,11 @@ func _carve_doors(rng: RandomNumberGenerator, connections: Array, door_width: in
 				else:
 					match_pair = p[0].y == start[0].y and p[0].x == start[0].x + k
 				if match_pair:
-					_doors[p[0]] = true
-					_doors[p[1]] = true
+					# The adjoining rooms each contribute a wall tile to the passage,
+					# but they share one Door positioned on the boundary between them.
+					_door_floors[p[0]] = true
+					_door_floors[p[1]] = true
+					_doorways.append([a, b, p[0], p[1]])
 
 
 # --------------------------------------------------------------- build ----
@@ -314,17 +320,23 @@ func _render_tiles() -> void:
 			var r: int = _room_of_tile(tx, ty)
 			var world := Vector2(tx * tile + tile * 0.5, ty * tile + tile * 0.5)
 			var pos := Vector2i(tx, ty)
-			if _doors.has(pos):
+			if _door_floors.has(pos):
 				_add_floor(floor_texture, world)
-				var door := Door.new()
-				_doors_root.add_child(door)
-				door.global_position = world
-				rooms[r].doors.append(door)
 			elif _is_wall(tx, ty):
 				_add_wall(wall_texture, world)
 			else:
 				_add_floor(floor_texture, world)
 				rooms[r].interior_tiles.append(world)
+	# A doorway belongs to both adjacent rooms. Sharing the same Door ensures
+	# either room locks the one physical barrier instead of creating two in series.
+	for doorway: Array in _doorways:
+		var door := Door.new()
+		_doors_root.add_child(door)
+		var tile_a: Vector2i = doorway[2]
+		var tile_b: Vector2i = doorway[3]
+		door.global_position = (Vector2(tile_a) + Vector2(tile_b)) * tile * 0.5 + Vector2.ONE * tile * 0.5
+		rooms[doorway[0]].doors.append(door)
+		rooms[doorway[1]].doors.append(door)
 	# Player starts in the middle of the start room.
 	start_position = rooms[0].center()
 
