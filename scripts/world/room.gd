@@ -19,6 +19,7 @@ var room_type := RoomType.COMBAT
 var cells: Array[Vector2i] = []
 var interior_tiles: Array[Vector2] = []
 var cell_pixels := 0.0
+var tile_size := 32.0
 var map_position := Vector2.ZERO
 var doors: Array[Door] = []
 var enemy_min := 2
@@ -37,6 +38,11 @@ var _armed := true       # spawner rooms: ready to spawn a fresh wave on entry
 var _active := false
 var _alive := 0
 var _trigger: Area2D
+var _pending_players: Array[Node2D] = []
+
+# Grobit's collision radius is 11 px. Requiring its centre to reach this inset
+# leaves the whole body beyond the approach/door tiles before a door can lock.
+const ACTIVATION_INSET := 12.0
 
 
 # Rooms that trap the player and require clearing before doors reopen. Spawner
@@ -71,9 +77,36 @@ func center() -> Vector2:
 	return sum / interior_tiles.size()
 
 
+func _physics_process(_delta: float) -> void:
+	for body: Node2D in _pending_players.duplicate():
+		if not is_instance_valid(body):
+			_pending_players.erase(body)
+			continue
+		if _is_fully_inside(body.global_position):
+			_pending_players.erase(body)
+			_enter_room()
+
+
+## True only in the safe centre of a proper interior floor tile. Door and
+## approach tiles are deliberately absent from interior_tiles, so a player's
+## complete collision body must clear the passage before this becomes true.
+func _is_fully_inside(world_position: Vector2) -> bool:
+	var half_extent := maxf(0.0, tile_size * 0.5 - ACTIVATION_INSET)
+	for tile_center: Vector2 in interior_tiles:
+		var offset := world_position - tile_center
+		if absf(offset.x) <= half_extent and absf(offset.y) <= half_extent:
+			return true
+	return false
+
+
 func _on_body_entered(body: Node) -> void:
 	if not body.is_in_group("player"):
 		return
+	if body is Node2D and not _pending_players.has(body):
+		_pending_players.append(body)
+
+
+func _enter_room() -> void:
 	# Spawner rooms lock and spawn a fresh wave each time you enter (armed), then
 	# unlock once the wave is cleared; leaving re-arms them for a bigger next wave.
 	if room_type == RoomType.SPAWNER:
@@ -90,6 +123,7 @@ func _on_body_entered(body: Node) -> void:
 func _on_body_exited(body: Node) -> void:
 	if not body.is_in_group("player"):
 		return
+	_pending_players.erase(body)
 	# Re-arm a spawner room once the player leaves a cleared wave.
 	if room_type == RoomType.SPAWNER and not _active:
 		_armed = true

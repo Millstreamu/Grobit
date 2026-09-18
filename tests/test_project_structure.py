@@ -194,11 +194,22 @@ class ProjectStructureTests(unittest.TestCase):
         self.assertEqual(generator.count("var door := Door.new()"), 1)
         self.assertIn("rooms[doorway[0]].doors.append(door)", generator)
         self.assertIn("rooms[doorway[1]].doors.append(door)", generator)
+        self.assertIn(
+            "door.global_position = Vector2(tile_a) * tile + Vector2.ONE * tile * 0.5",
+            generator,
+        )
+        self.assertNotIn("(Vector2(tile_a) + Vector2(tile_b)) * tile * 0.5", generator)
+
+        room = (ROOT / "scripts/world/room.gd").read_text()
+        self.assertIn("func _is_fully_inside(world_position: Vector2) -> bool:", room)
+        self.assertIn("_pending_players.append(body)", room)
+        self.assertIn("if _is_fully_inside(body.global_position):", room)
 
         studio = (ROOT / "tools/config-studio/index.html").read_text()
         self.assertIn("const doorFloors=new Set(),doors=[];", studio)
         self.assertIn("doors.push(sel);", studio)
         self.assertNotIn("doors.add(sel[0]", studio)
+        self.assertIn("cx.fillRect(d[0]*px,d[1]*px,px,px);", studio)
 
 if __name__ == "__main__":
     unittest.main()
