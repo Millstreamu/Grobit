@@ -160,6 +160,7 @@ func _locked_tech_ids() -> Array:
 func _status_text() -> String:
 	var lines: Array = []
 	lines.append("Ability:  " + _ability_text())
+	lines.append("Goal:  " + _goal_text())
 	lines.append("Resources: " + _resource_line())
 	lines.append("Shooting is automatic.   [Space] use ability   [Tab] switch target   [F] interact")
 	lines.append("[I] factory   [B] build   [F] interact/scrap")
@@ -175,6 +176,17 @@ func _ability_text() -> String:
 	if _abilities.is_ready():
 		return "%s: ready" % _abilities.equipped_name()
 	return "%s: %d%%" % [_abilities.equipped_name(), int((1.0 - _abilities.cooldown_ratio()) * 100.0)]
+
+
+func _goal_text() -> String:
+	# Actionable "next unlock" first (before the minimap), then Mars total + ship note.
+	var parts: Array = []
+	var hint := MetaState.next_unlock_hint()
+	if hint != "":
+		parts.append("next: " + hint)
+	parts.append("Mars %d" % MetaState.mars_total())
+	parts.append("ship at pad" if RunState.shipping_unlocked else "do objective, then ship")
+	return "   •   ".join(parts)
 
 
 func _resource_line() -> String:

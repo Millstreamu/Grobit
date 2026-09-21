@@ -141,7 +141,7 @@ func can_place(def_id: String, core: Vector2i) -> bool:
 func place_machine(def_id: String, core: Vector2i) -> int:
 	if not can_place(def_id, core):
 		return -1
-	machines.append({"def_id": def_id, "core": core, "progress": 0.0, "working": false, "level": 1, "slots": [], "modules": []})
+	machines.append({"def_id": def_id, "core": core, "progress": 0.0, "working": false, "level": 1, "slots": [], "modules": [], "status": "idle", "status_detail": ""})
 	var mi := machines.size() - 1
 	set_cell(core, {"kind": "machine", "mi": mi})
 	return mi
@@ -334,6 +334,8 @@ func tick(delta: float) -> void:
 		if recipe.is_empty():
 			m.working = false
 			m.progress = 0.0
+			m.status = "idle"
+			m.status_detail = _closest_missing(m, recipes)
 			continue
 
 		var free_out := _free_output_cells(m)
@@ -342,8 +344,12 @@ func tick(delta: float) -> void:
 			total_out += int(recipe.produces[id])
 		if free_out.size() < total_out:
 			m.working = false  # blocked: no room for all outputs; hold progress
+			m.status = "blocked"
+			m.status_detail = "output full"
 			continue
 
+		m.status = "working"
+		m.status_detail = ""
 		var seconds := float(recipe.get("seconds", 3.0)) * pow(SPEED_PER_LEVEL, int(m.get("level", 1)) - 1) * _module_speed_mult(m)
 		m.working = true
 		m.progress = float(m.progress) + delta
@@ -408,6 +414,44 @@ func _free_output_cells(m: Dictionary) -> Array:
 		if _can_receive(p):
 			out.append(p)
 	return out
+
+
+## For an idle machine, the resource name it most needs (closest to completing one
+## of its recipes), or "" if nothing is partially satisfiable.
+func _closest_missing(m: Dictionary, recipes: Array) -> String:
+	var have := _input_multiset(m)
+	var best := 9999
+	var name := ""
+	for r: Dictionary in recipes:
+		var miss := 0
+		var first := ""
+		for id: String in r.get("needs", {}):
+			var lack := int(r.needs[id]) - int(have.get(id, 0))
+			if lack > 0:
+				miss += lack
+				if first == "":
+					first = id
+		if miss > 0 and miss < best:
+			best = miss
+			name = first
+	return GameData.resource_name(name) if name != "" else ""
+
+
+## Human-readable status for the machine whose core is at `pos` ("" if none / arm).
+func status_at(pos: Vector2i) -> String:
+	var mi := machine_at(pos)
+	if mi < 0:
+		return ""
+	var m: Dictionary = machines[mi]
+	match String(m.get("status", "")):
+		"working":
+			return "working"
+		"blocked":
+			return "blocked (%s)" % String(m.get("status_detail", ""))
+		"idle":
+			var d := String(m.get("status_detail", ""))
+			return "waiting — needs %s" % d if d != "" else "idle"
+	return "idle"
 
 
 # ------------------------------------------------------ arm intake ----

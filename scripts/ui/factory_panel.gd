@@ -67,6 +67,7 @@ func _debug_open() -> void:
 	elif mode == "flow" and f != null:
 		f.place_machine("smelter", Vector2i(3, 0))  # input (2,0), output (4,0)
 		f.set_cell(Vector2i(2, 0), {"kind": "resource", "id": "scrap_metal"})
+		_cursor = Vector2i(3, 0)  # on the machine core → status line shows
 	# GROBIT_OPEN_FACTORY=level → a smelter + stock, mid level-up (shape preview).
 	elif mode == "level" and f != null:
 		f.place_machine("smelter", Vector2i(2, 2))
@@ -386,14 +387,42 @@ func _draw() -> void:
 			draw_rect(r, Color(0.4, 1, 0.4, 0.45) if fits else Color(1, 0.4, 0.4, 0.45))
 			draw_rect(r.grow(1), Color(0.6, 1, 0.6) if fits else Color(1, 0.5, 0.5), false, 2.0)
 
-	# Direction arrow for a pending conveyor/splitter placement.
+	# Placement preview: conveyor/splitter show a direction arrow; a machine shows its
+	# icon at the core plus IN/OUT labels + output arrow so its footprint reads.
 	if _place_mode:
 		var pid: String = _placeable_ids()[_place_index]
 		if pid.begins_with("__"):
 			var cr := origin + Vector2(_cursor.x * (CELL + GAP), _cursor.y * (CELL + GAP))
 			draw_string(_font, cr + Vector2(CELL * 0.5 - 8, CELL * 0.5 + 8), String(ARROWS.get(_place_dir, "•")), HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color(1, 1, 0.6))
+		else:
+			_draw_machine_preview(f, origin, pid)
 
 	_draw_footer(origin + Vector2(0, grid_h + 16), grid_w)
+
+
+func _cell_rect(origin: Vector2, pos: Vector2i) -> Rect2:
+	return Rect2(origin + Vector2(pos.x * (CELL + GAP), pos.y * (CELL + GAP)), Vector2(CELL, CELL))
+
+
+## Ghosts the selected machine over its footprint at the cursor: icon on the core,
+## an output arrow, and IN/OUT labels on the cells it would read from / write to.
+func _draw_machine_preview(f: FactoryGrid, origin: Vector2, id: String) -> void:
+	var def: Dictionary = GameData.machines.get(id, {})
+	if def.is_empty() or not f.in_bounds(_cursor):
+		return
+	var core := _cell_rect(origin, _cursor)
+	var tex := ContentLibrary.get_icon(String(def.get("icon", id)), Vector2i(30, 30), String(def.get("color", "")))
+	draw_texture_rect(tex, core.grow(-13), false, Color(1, 1, 1, 0.85))
+	for off: Variant in def.get("inputs", []):
+		var p := _cursor + Vector2i(int(off[0]), int(off[1]))
+		if f.in_bounds(p):
+			draw_string(_font, _cell_rect(origin, p).position + Vector2(6, 16), "IN", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.6, 0.8, 1))
+	for off: Variant in def.get("outputs", []):
+		var p := _cursor + Vector2i(int(off[0]), int(off[1]))
+		if f.in_bounds(p):
+			var r := _cell_rect(origin, p)
+			draw_string(_font, r.position + Vector2(4, 16), "OUT", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.6, 1, 0.7))
+			draw_string(_font, r.position + Vector2(r.size.x - 18, 18), String(ARROWS.get(p - _cursor, "•")), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.6, 1, 0.7))
 
 
 func _draw_cell(f: FactoryGrid, pos: Vector2i, rect: Rect2, role: String, preview: Dictionary) -> void:
@@ -422,6 +451,14 @@ func _draw_cell(f: FactoryGrid, pos: Vector2i, rect: Rect2, role: String, previe
 		draw_string(_font, rect.position + Vector2(rect.size.x - 18, 20), arrow, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.7, 1, 0.7))
 		# Level badge.
 		draw_string(_font, rect.position + Vector2(4, rect.size.y - 6), "L%d" % f.level_of(int(cell.mi)), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 0.9, 0.5))
+		# Status dot: green = working, amber = blocked, grey = idle/waiting.
+		var st := String(f.machines[int(cell.mi)].get("status", ""))
+		var dot := Color(0.5, 0.5, 0.55)
+		if st == "working":
+			dot = Color(0.4, 0.9, 0.5)
+		elif st == "blocked":
+			dot = Color(0.95, 0.75, 0.3)
+		draw_rect(Rect2(rect.position + Vector2(rect.size.x - 15, rect.size.y - 15), Vector2(9, 9)), dot)
 	elif kind == "machine_slot":
 		var mod := f.module_at(pos)
 		if mod != "":
@@ -486,6 +523,10 @@ func _preview_cells(f: FactoryGrid) -> Dictionary:
 
 
 func _draw_footer(pos: Vector2, width: float) -> void:
+	if _place_mode:
+		_draw_place_info(pos, width)
+		return
+
 	var line := ""
 	if _install_mode:
 		var id: String = _install_opts[_install_index] if not _install_opts.is_empty() else ""
@@ -496,20 +537,76 @@ func _draw_footer(pos: Vector2, width: float) -> void:
 		var f := RunState.factory
 		var cost := RunState.level_cost(f.level_of(_level_mi))
 		line = "LEVEL UP (%s)   [Space] confirm   [R] reshuffle (%d left)   [Esc] cancel" % [_cost_text(cost), RunState.reshuffles]
-	elif _place_mode:
-		var pid: String = _placeable_ids()[_place_index]
-		var tag := ""
-		if pid.begins_with("__"):
-			tag = "(%s)   [R] rotate" % _cost_text(RunState.part_cost(pid))
-		elif RunState.stock_count(pid) > 0:
-			tag = "(in stock: %d — free)" % RunState.stock_count(pid)
-		else:
-			tag = "(build: %s)" % _cost_text(RunState.part_cost(pid))
-		line = "PLACE: %s %s   [Tab] cycle   [Space] place   [B]/[Esc] cancel" % [_part_name(pid), tag]
 	elif not _carried.is_empty():
 		line = "Carrying %s   [Space] drop   [I]/[Esc] close" % GameData.resource_name(String(_carried.get("id", "")))
 	else:
+		# On a machine core, show its live status; otherwise the general controls.
+		var f := RunState.factory
+		var st := f.status_at(_cursor) if f != null else ""
+		if st != "":
+			var mi := f.machine_at(_cursor)
+			var col := Color(0.6, 1, 0.7) if st == "working" else (Color(1, 0.85, 0.45) if st.begins_with("blocked") else Color(0.85, 0.85, 0.7))
+			draw_string(_font, pos, "%s L%d — %s     [L] level   [R] pick up" % [_part_name(String(f.machines[mi].def_id)), f.level_of(mi), st], HORIZONTAL_ALIGNMENT_LEFT, width, 14, col)
+			return
 		line = "[WASD] move   [Space] item/module   [L] level   [R] pick up machine   [B] build   [I]/[Esc] close"
 	draw_string(_font, pos, line, HORIZONTAL_ALIGNMENT_LEFT, width, 14, Color(0.8, 0.8, 0.85))
 	if _message != "":
 		draw_string(_font, pos + Vector2(0, 20), _message, HORIZONTAL_ALIGNMENT_LEFT, width, 13, Color(1, 0.95, 0.7))
+
+
+## Multi-line place-mode info: icon + name + cost/stock, what it makes, and controls.
+func _draw_place_info(pos: Vector2, width: float) -> void:
+	var id: String = _placeable_ids()[_place_index]
+	# Header: icon + name + cost/stock/validity.
+	var name := _part_name(id)
+	var tag := ""
+	if id.begins_with("__"):
+		tag = "cost %s" % _cost_text(RunState.part_cost(id))
+	elif RunState.stock_count(id) > 0:
+		tag = "in stock: %d (free)" % RunState.stock_count(id)
+	else:
+		tag = "build cost %s" % _cost_text(RunState.part_cost(id))
+	var x := pos.x
+	if not id.begins_with("__"):
+		var def: Dictionary = GameData.machines.get(id, {})
+		var tex := ContentLibrary.get_icon(String(def.get("icon", id)), Vector2i(18, 18), String(def.get("color", "")))
+		draw_texture_rect(tex, Rect2(pos.x, pos.y - 2, 18, 18), false)
+		x = pos.x + 24
+	draw_string(_font, Vector2(x, pos.y + 13), "%s   —   %s" % [name, tag], HORIZONTAL_ALIGNMENT_LEFT, width, 15, Color(0.92, 0.92, 0.96))
+
+	# What it does (cap at 2 lines so tall recipe lists don't overflow the panel).
+	var y := pos.y + 32
+	var makes := _makes_lines(id)
+	for i in mini(makes.size(), 2):
+		var desc: String = makes[i]
+		if i == 1 and makes.size() > 2:
+			desc += "   (+%d more)" % (makes.size() - 2)
+		draw_string(_font, Vector2(pos.x, y), desc, HORIZONTAL_ALIGNMENT_LEFT, width, 12, Color(0.72, 0.82, 0.78))
+		y += 16
+
+	var rot := "   [R] rotate" if id.begins_with("__") else ""
+	draw_string(_font, Vector2(pos.x, pos.y + 76), "[Tab] cycle   [WASD] move   [Space] place%s   [B]/[Esc] cancel" % rot, HORIZONTAL_ALIGNMENT_LEFT, width, 12, Color(0.7, 0.7, 0.75))
+	if _message != "":
+		draw_string(_font, Vector2(pos.x, pos.y + 92), _message, HORIZONTAL_ALIGNMENT_LEFT, width, 12, Color(1, 0.95, 0.7))
+
+
+## Human-readable "what this places does" lines: recipes for a machine, or a note.
+func _makes_lines(id: String) -> Array:
+	if id == "__conveyor":
+		return ["Carries items one cell along its arrow (bridges gaps between machines)."]
+	if id == "__splitter":
+		return ["Sends items alternately to two outputs (its arrow + 90° from it)."]
+	var lines: Array = []
+	for r: Dictionary in GameData.recipes_for(id):
+		lines.append("Makes:  %s  →  %s" % [_ingredients(r.get("needs", {})), _ingredients(r.get("produces", {}))])
+	if lines.is_empty():
+		lines.append("Receives harvested items.")
+	return lines
+
+
+func _ingredients(items: Dictionary) -> String:
+	var parts: Array = []
+	for res: String in items:
+		var n := int(items[res])
+		parts.append(("%d× %s" % [n, GameData.resource_name(res)]) if n > 1 else GameData.resource_name(res))
+	return " + ".join(parts)

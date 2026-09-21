@@ -67,6 +67,39 @@ func bank_delivery(items: Dictionary) -> Array:
 	return newly
 
 
+## The nearest not-yet-earned unlock (machine or module) as a short hint like
+## "ship 2 Circuit Board → Constructor", or "" if everything is unlocked.
+func next_unlock_hint() -> String:
+	var best_total := 1 << 30
+	var best := ""
+	for id: String in GameData.machines:
+		var s := _unlock_remaining(GameData.machines[id], id, machines_unlocked)
+		if s.total > 0 and s.total < best_total:
+			best_total = s.total
+			best = s.text
+	for id: String in GameData.modules:
+		var s := _unlock_remaining(GameData.modules[id], id, module_library)
+		if s.total > 0 and s.total < best_total:
+			best_total = s.total
+			best = s.text
+	return best
+
+
+func _unlock_remaining(def: Dictionary, id: String, earned: Array) -> Dictionary:
+	if not bool(def.get("locked", false)) or earned.has(id):
+		return {"total": 0, "text": ""}
+	var parts: Array = []
+	var total := 0
+	for res: String in def.get("unlock_requires", {}):
+		var need := int(def.unlock_requires[res]) - int(mars_delivered.get(res, 0))
+		if need > 0:
+			parts.append("%d %s" % [need, GameData.resource_name(res)])
+			total += need
+	if total <= 0:
+		return {"total": 0, "text": ""}
+	return {"total": total, "text": "ship %s → %s" % [", ".join(parts), String(def.get("name", id))]}
+
+
 ## A machine is available if it isn't locked, or its unlock has been earned.
 func is_machine_unlocked(machine_id: String) -> bool:
 	var def: Dictionary = GameData.machines.get(machine_id, {})
