@@ -14,8 +14,6 @@ var area_id := ""
 var run_seed := 0
 var player: GrobitPlayer
 var generator: AreaGenerator
-var recycler_system: RecyclerSystem
-var manufacturing: Manufacturing
 var build_manager: BuildManager
 var hud: Hud
 var _run_over := false
@@ -23,7 +21,11 @@ var _run_over := false
 
 func _ready() -> void:
 	add_to_group("run_controller")
-	process_mode = Node.PROCESS_MODE_ALWAYS
+	# Pausable so a modal panel's get_tree().paused actually freezes the world
+	# (player, enemies, build mode). Nodes that must keep running while paused set
+	# their own PROCESS_MODE_ALWAYS: the HUD, the factory processor, and the modal
+	# panels. (Restart from the end-of-run summary is driven by the always-on HUD.)
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 
 	area_id = GameData.first_area_id()
 	if area_id.is_empty():
@@ -37,13 +39,11 @@ func _ready() -> void:
 	add_child(generator)
 	var start_position := generator.build(area_id, run_seed)
 
-	recycler_system = RecyclerSystem.new()
-	recycler_system.name = "RecyclerSystem"
-	add_child(recycler_system)
-
-	manufacturing = Manufacturing.new()
-	manufacturing.name = "Manufacturing"
-	add_child(manufacturing)
+	# Real-time driver for the inventory-factory (ticks even while the panel pauses
+	# the tree, so processing stays live).
+	var factory_processor := FactoryProcessor.new()
+	factory_processor.name = "FactoryProcessor"
+	add_child(factory_processor)
 
 	build_manager = BuildManager.new()
 	build_manager.name = "BuildManager"
@@ -56,6 +56,18 @@ func _ready() -> void:
 	add_child(player)
 	player.died.connect(_on_player_died)
 
+	# Retrieval pad in the (safe) start room — where you ship out once the objective
+	# is done. Slice: pre-placed; later a buildable in any cleared room.
+	var pad := RetrievalPad.new()
+	add_child(pad)
+	pad.global_position = start_position + Vector2(0, 44)
+
+	# Decode station in the start room so drafting modules is reachable (slice; later
+	# these live in workshop rooms).
+	var decode := DecodeStation.new()
+	add_child(decode)
+	decode.global_position = start_position + Vector2(-44, 44)
+
 	var selection := SelectionManager.new()
 	selection.name = "SelectionManager"
 	add_child(selection)
@@ -63,13 +75,20 @@ func _ready() -> void:
 	hud = Hud.new()
 	hud.name = "HUD"
 	add_child(hud)
-	hud.setup(player, recycler_system, manufacturing, build_manager, generator)
+	hud.setup(player, build_manager, generator)
 	build_manager.message.connect(hud.log_message)
 
 	if OS.has_environment("GROBIT_DEBUG_ENEMIES"):
 		_debug_spawn_enemies()
 	if OS.has_environment("GROBIT_DEBUG_LOOT"):
 		_debug_spawn_loot()
+	# Env-gated: unlock shipping + seed factory items + open the cartridge loader.
+	if OS.has_environment("GROBIT_OPEN_SHIP") and RunState.factory != null:
+		RunState.unlock_shipping()
+		RunState.factory.set_cell(Vector2i(2, 0), {"kind": "resource", "id": "metal_bar"})
+		RunState.factory.set_cell(Vector2i(3, 0), {"kind": "resource", "id": "scrap_metal"})
+		RunState.factory.set_cell(Vector2i(2, 1), {"kind": "resource", "id": "copper_wire"})
+		hud.open_cartridge.call_deferred()
 
 	# Report which artwork is still using placeholders (all icons now requested).
 	ContentLibrary.print_missing_report.call_deferred()
@@ -90,31 +109,42 @@ func _debug_spawn_enemies() -> void:
 # Debug helper (env-gated): a scrap node + repair station beside the start.
 func _debug_spawn_loot() -> void:
 	var node := ScrapNode.new()
-	node.yield_table = [{"resource": "raw_scrap", "min": 1, "max": 2, "chance": 1.0}]
-	node.charges = 3
+	node.generate({
+		"label": "salvage", "tokens_min": 6, "tokens_max": 8,
+		"rust_chance": 0.5, "rust_min": 1, "rust_max": 2, "loose_chance": 0.5,
+		"pool": [
+			{"id": "bent_panel", "weight": 5},
+			{"id": "cable_bundle", "weight": 3},
+			{"id": "broken_motor", "weight": 2},
+			{"id": "burnt_board", "weight": 2},
+		],
+	})
 	add_child(node)
 	node.global_position = player.global_position + Vector2(44, 0)
 	var station := RepairStation.new()
-	station.cost = {"metal": 2}
+	station.cost = {"scrap_metal": 2}
 	station.reward = "ability"
 	add_child(station)
 	station.global_position = player.global_position + Vector2(-44, 0)
-	var fab := Fabricator.new()
-	add_child(fab)
-	fab.global_position = player.global_position + Vector2(0, -48)
+
+	# Env-gated: open the scrapping minigame on the spawned node for inspection.
+	if OS.has_environment("GROBIT_OPEN_SCRAP") and hud != null:
+		hud.open_scrap_minigame.call_deferred(node)
 
 
 func _spawn_objective() -> void:
 	if generator.objective_room == null:
 		return
-	var objective: Dictionary = GameData.area(area_id).get("objective", {})
-	if String(objective.get("type", "")) != "power_generator":
-		return
-	var machine := PowerGenerator.new()
-	machine.requires = (objective.get("requires", {}) as Dictionary).duplicate()
-	machine.global_position = generator.objective_room.center()
-	add_child(machine)
-	machine.repaired.connect(_on_generator_repaired)
+	# Slice: a simple objective terminal that unlocks shipping when activated.
+	var terminal := ObjectiveTerminal.new()
+	add_child(terminal)
+	terminal.global_position = generator.objective_room.center()
+
+
+## Ends the run, banking the loaded cartridge toward the permanent Mars total.
+func on_cartridge_shipped(items: Dictionary) -> void:
+	RunState.last_run_unlocks = MetaState.bank_delivery(items)
+	_end_run(RunState.RESULT_SHIPPED)
 
 
 func _on_player_died() -> void:
@@ -140,14 +170,6 @@ func _nearest_usable_beacon() -> RespawnBeacon:
 			best_distance = distance
 			best = beacon
 	return best
-
-
-func on_extraction_confirmed() -> void:
-	_end_run(RunState.RESULT_EXTRACTED)
-
-
-func _on_generator_repaired() -> void:
-	_end_run(RunState.RESULT_REPAIRED)
 
 
 func _end_run(result: String) -> void:

@@ -1,21 +1,25 @@
 {
-  "_comment": "Manufacturing recipes: use processed materials to build specific components. Player-triggered, produced over 'seconds'.",
-  "recipes": {
-    "power_cell": {
-      "name": "Power Cell",
-      "icon": "power_cell",
-      "inputs": { "metal": 2, "electronics": 1 },
-      "output": "power_cell",
-      "output_amount": 1,
-      "seconds": 4.0
-    },
-    "circuit_board": {
-      "name": "Circuit Board",
-      "icon": "circuit_board",
-      "inputs": { "metal": 1, "electronics": 2 },
-      "output": "circuit_board",
-      "output_amount": 1,
-      "seconds": 4.0
-    }
-  }
+  "_comment": "Grid-machine recipes (a list). Each: 'machine', 'needs' (id->count, matched set-based across input cells), 'produces' (id->count, distributed across output cells), 'seconds'. First recipe whose needs are present and whose outputs have room runs. Broken motors show the fast-vs-efficient choice: the Recycler is quick (2 materials), while Grinder → Separator recovers 3.",
+  "recipes": [
+    { "machine": "scrap_recycler", "needs": { "bent_panel": 1 }, "produces": { "scrap_metal": 2 }, "seconds": 2.0 },
+    { "machine": "scrap_recycler", "needs": { "cable_bundle": 1 }, "produces": { "copper_wire": 1, "polymer": 1 }, "seconds": 2.0 },
+    { "machine": "scrap_recycler", "needs": { "broken_motor": 1 }, "produces": { "scrap_metal": 1, "mechanical_parts": 1 }, "seconds": 2.5 },
+
+    { "machine": "grinder", "needs": { "broken_motor": 1 }, "produces": { "mixed_components": 1 }, "seconds": 2.0 },
+
+    { "machine": "separator", "needs": { "burnt_board": 1 }, "produces": { "electronic_scrap": 1, "copper_wire": 1 }, "seconds": 2.5 },
+    { "machine": "separator", "needs": { "mixed_components": 1 }, "produces": { "scrap_metal": 1, "copper_wire": 1, "mechanical_parts": 1 }, "seconds": 3.0 },
+
+    { "machine": "smelter", "needs": { "scrap_metal": 1 }, "produces": { "metal_bar": 1 }, "seconds": 3.0 },
+    { "machine": "press", "needs": { "metal_bar": 1 }, "produces": { "metal_plate": 1 }, "seconds": 2.5 },
+    { "machine": "press", "needs": { "polymer": 1 }, "produces": { "polymer_sheet": 1 }, "seconds": 2.5 },
+    { "machine": "refiner", "needs": { "copper_wire": 1 }, "produces": { "refined_copper": 1 }, "seconds": 2.5 },
+
+    { "machine": "circuit_printer", "needs": { "electronic_scrap": 1, "refined_copper": 1 }, "produces": { "circuit_board": 1 }, "seconds": 4.0 },
+
+    { "machine": "constructor", "needs": { "metal_plate": 1, "refined_copper": 1, "mechanical_parts": 1 }, "produces": { "motor": 1 }, "seconds": 5.0 },
+    { "machine": "constructor", "needs": { "circuit_board": 1, "refined_copper": 1, "polymer_sheet": 1 }, "produces": { "control_unit": 1 }, "seconds": 5.0 },
+
+    { "machine": "assembler", "needs": { "metal_plate": 2, "mechanical_parts": 1 }, "produces": { "structural_frame": 1 }, "seconds": 6.0 }
+  ]
 }

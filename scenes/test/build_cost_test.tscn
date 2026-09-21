@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dn60rt66ycadc"]
+
+[ext_resource type="Script" path="res://scripts/world/build_cost_test.gd" id="1"]
+
+[node name="BuildCostTest" type="Node"]
+script = ExtResource("1")

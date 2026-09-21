@@ -3,7 +3,7 @@ extends Area2D
 ## A dropped resource on the floor. NOT auto-collected — stand near it and press F
 ## to pick it up (obeys inventory space). Non-solid, so Grobit can walk over it.
 
-@export var resource_id := "raw_scrap"
+@export var resource_id := "scrap_metal"
 @export var amount := 1
 
 var _in_range := false

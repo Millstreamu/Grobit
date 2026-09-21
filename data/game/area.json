@@ -1,5 +1,5 @@
 {
-  "_comment": "Area definition. Keeps one area's specifics out of gameplay code so more areas are easy to add later.",
+  "_comment": "Area definition. Keeps one area's specifics out of gameplay code so more areas are easy to add later. Harvest nodes yield JUNK (processed into materials by grid machines).",
   "areas": {
     "derelict_foundry": {
       "name": "Derelict Foundry",
@@ -10,7 +10,6 @@
       "door_open_tile": "door_open",
       "enemies": ["basic_enemy", "swarmer", "brute", "shooter"],
       "enemy_weights": { "basic_enemy": 5, "swarmer": 3, "brute": 2, "shooter": 2 },
-      "start_recyclers": ["scrap_recycler"],
       "generation": {
         "room_count": 7,
         "min_enemies": 2,
@@ -18,47 +17,79 @@
         "room_type_weights": { "combat": 4, "salvage": 2, "hazard": 1, "spawner": 1, "workshop": 1 }
       },
       "harvest": {
-        "per_room_min": 1,
-        "per_room_max": 3,
-        "charges": 3,
-        "yield": [
-          { "resource": "raw_scrap", "min": 1, "max": 2, "chance": 1.0 },
-          { "resource": "metal", "min": 1, "max": 1, "chance": 0.2 }
+        "nodes": [
+          {
+            "kind": "scrap",
+            "label": "scrap pile",
+            "sprite": "scrap_node",
+            "color": "8a7f6d",
+            "per_room_min": 1,
+            "per_room_max": 3,
+            "tokens_min": 3,
+            "tokens_max": 8,
+            "rust_chance": 0.35,
+            "rust_min": 1,
+            "rust_max": 3,
+            "loose_chance": 0.25,
+            "pool": [
+              { "id": "bent_panel", "weight": 5 },
+              { "id": "broken_motor", "weight": 2 },
+              { "id": "cable_bundle", "weight": 3 }
+            ]
+          },
+          {
+            "kind": "e_waste",
+            "label": "e-waste pile",
+            "sprite": "e_waste_node",
+            "color": "4fae6b",
+            "per_room_min": 0,
+            "per_room_max": 2,
+            "tokens_min": 2,
+            "tokens_max": 5,
+            "rust_chance": 0.25,
+            "rust_min": 1,
+            "rust_max": 2,
+            "loose_chance": 0.35,
+            "pool": [
+              { "id": "burnt_board", "weight": 4 },
+              { "id": "cable_bundle", "weight": 3 }
+            ]
+          }
         ]
       },
       "repair": {
-        "cost": { "metal": 2 },
+        "cost": { "scrap_metal": 2 },
         "rewards": ["ability", "max_health", "aegis_rounds"]
       },
       "salvage_loot": [
-        { "resource": "raw_scrap", "min": 2, "max": 4, "chance": 1.0 },
-        { "resource": "electronics", "min": 1, "max": 2, "chance": 0.7 },
+        { "resource": "bent_panel", "min": 2, "max": 4, "chance": 1.0 },
+        { "resource": "cable_bundle", "min": 1, "max": 2, "chance": 0.7 },
         { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.3 }
       ],
       "hazard": { "damage": 1, "interval": 0.6, "radius": 40 },
       "spawner": { "markers": 1, "base_count": 3, "count_growth": 2, "base_health": 3, "base_speed": 55, "health_per_wave": 1, "speed_per_wave": 0.05 },
       "resource_drops": {
         "basic_enemy": [
-          { "resource": "electronics", "min": 1, "max": 1, "chance": 0.45 },
+          { "resource": "electronic_scrap", "min": 1, "max": 1, "chance": 0.45 },
           { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.15 }
         ],
         "swarmer": [
-          { "resource": "raw_scrap", "min": 1, "max": 1, "chance": 0.5 }
+          { "resource": "mechanical_parts", "min": 1, "max": 1, "chance": 0.5 }
         ],
         "brute": [
-          { "resource": "raw_scrap", "min": 2, "max": 3, "chance": 1.0 },
-          { "resource": "electronics", "min": 1, "max": 1, "chance": 0.5 },
+          { "resource": "mechanical_parts", "min": 2, "max": 3, "chance": 1.0 },
+          { "resource": "electronic_scrap", "min": 1, "max": 1, "chance": 0.5 },
           { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.25 }
         ],
         "shooter": [
-          { "resource": "electronics", "min": 1, "max": 1, "chance": 0.8 },
+          { "resource": "electronic_scrap", "min": 1, "max": 1, "chance": 0.8 },
           { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.2 }
         ]
       },
       "objective": {
-        "type": "power_generator",
-        "name": "Power Generator",
-        "requires": { "power_cell": 2, "circuit_board": 1 }
+        "type": "objective_terminal",
+        "name": "Foundry Control",
+        "requires": { "control_unit": 1, "circuit_board": 1 }
       }
     }
   }

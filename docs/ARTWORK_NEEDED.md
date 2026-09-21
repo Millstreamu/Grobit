@@ -10,18 +10,30 @@ listing whatever placeholders were actually used that session.
 
 ## Still needed (gameplay)
 
-| Sprite id (must match) | Suggested size | Used for |
-| --- | --- | --- |
-| `circuit_board` | 16×16 | Manufactured component + inventory/recipe icon |
-| `wall_spawner` | 32×32 | Wall-mounted enemy spawner (spawner rooms) |
-| `hazard_zone` | ~80×80 | Translucent danger disc for hazard rooms (a soft radial blob works well) |
-| `enemy_swarmer` | 12×12 | Fast, weak melee enemy |
-| `enemy_brute` | 26×26 | Slow, tanky melee enemy |
-| `enemy_shooter` | 18×18 | Ranged enemy that keeps its distance and fires |
-| `enemy_shot` | 8×8 | Enemy projectile |
-| `scrap_node` | ~20×20 | Harvestable breakdown scrap (most rooms) |
-| `repair_station` | 32×32 | Broken equipment you repair for a reward (workshop rooms) |
-| `fabricator` | 30×30 | Buildable crafting machine (interact to manufacture) |
+Salvage economy (see docs/MACHINES_SCRAPABLES_RESOURCES.md). Everything renders as a
+coloured placeholder until a matching sprite id is added.
+
+**Grid machines (28×28):** `scrapper_arm`, `scrap_recycler`, `grinder`, `separator`,
+`smelter`, `press`, `refiner`, `circuit_printer`, `constructor`, `assembler`.
+
+**Junk items (16×16, harvested):** `bent_panel`, `cable_bundle`, `burnt_board`,
+`broken_motor`.
+
+**Materials/processed/components (16×16):** `mixed_components`, `scrap_metal`,
+`copper_wire`, `electronic_scrap`, `polymer`, `mechanical_parts`, `metal_bar`,
+`metal_plate`, `refined_copper`, `polymer_sheet`, `circuit_board`, `motor`,
+`structural_frame`, `control_unit`, `tech_data`.
+
+**Modules (24×24):** `module_overclock`, `module_precision`, `module_yield`,
+`module_turbo`.
+
+**World stations / nodes (30×30 / ~20×20):** `scrap_node`, `e_waste_node`,
+`repair_station`, `objective_terminal`, `retrieval_pad`, `decode_station`,
+`respawn_beacon`.
+
+**Enemies / hazards:** `enemy_swarmer` (12×12), `enemy_brute` (26×26),
+`enemy_shooter` (18×18), `enemy_shot` (8×8), `wall_spawner` (32×32),
+`hazard_zone` (~80×80).
 
 ## UI art (nice-to-have — panels currently use plain coloured squares)
 

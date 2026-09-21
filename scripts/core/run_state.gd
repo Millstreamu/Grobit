@@ -1,15 +1,10 @@
 extends Node
 ## Autoload. RUN data — everything reset when a run starts.
 ##
-## Inventory is a fixed GRID of single-item slots (no stacking): each slot is
-## empty, holds one resource unit, or holds a module (e.g. the Scrap Recycler).
-## The rest of the game still thinks in quantities, so this exposes count-based
-## helpers (get_quantity / can_afford / spend) on top of the slot storage.
-##
-## Slot shape (a Dictionary):
-##   {}                                                  -> empty
-##   {"kind": "resource", "id": <resource_id>}           -> one resource unit
-##   {"kind": "module", "id": <module_id>, "buffer": int, "progress": float}
+## The inventory IS the factory (see docs/INVENTORY_FACTORY_DIRECTION.md): resources
+## live as items in the `factory` grid. Count-based helpers (get_quantity /
+## can_afford / spend / add) operate on that grid, so drops, repair costs and build
+## costs all read and write the same storage the player sees.
 
 signal inventory_changed(resource_id: String, quantity: int)
 signal run_started()
@@ -18,16 +13,26 @@ signal run_ended(result: String, summary: Dictionary)
 const RESULT_NONE := ""
 const RESULT_EXTRACTED := "extracted"
 const RESULT_REPAIRED := "repaired"
+const RESULT_SHIPPED := "shipped"
 const RESULT_LOST := "lost"
 
-const COLUMNS := 5
-const ROWS := 4
-const CAPACITY := COLUMNS * ROWS
+## Inventory-factory grid (see docs/INVENTORY_FACTORY_DIRECTION.md). Bare each run
+## with the scrapper arm pre-placed.
+const FACTORY_COLS := 5
+const FACTORY_ROWS := 4
+var factory: FactoryGrid
 
 var area_id := ""
 var run_seed := 0
 var run_active := false
 var result := RESULT_NONE
+
+## Set true when the map objective is completed; the retrieval pad only ships once
+## this is on (see docs/INVENTORY_FACTORY_DIRECTION.md — objective gates shipping).
+var shipping_unlocked := false
+
+## Machine names newly unlocked by the shipment that ended this run (for the summary).
+var last_run_unlocks: Array = []
 
 ## The single active ability chosen for this run (Space triggers it), and the set
 ## of abilities the player may choose/switch to. Structured so mid-run unlocks can
@@ -35,7 +40,15 @@ var result := RESULT_NONE
 var equipped_ability := ""
 var available_abilities: Array[String] = []
 
-var slots: Array = []
+## Reshuffles left this run for re-rolling a machine level-up's RNG slot shape.
+## Starts small and (later, via meta) grows with progress. Per-run budget.
+var reshuffles := 1
+
+## Machines built this run but not currently placed (id -> count). Placing from the
+## stock is free (you already own it); picking a machine up returns it here. This is
+## what makes sequential batch play work in a small grid — build a line, run it,
+## pick the machines up, and re-lay them for the next batch.
+var machine_stock: Dictionary = {}
 
 
 func begin_run(new_area_id: String, new_seed: int) -> void:
@@ -43,6 +56,8 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 	run_seed = new_seed
 	result = RESULT_NONE
 	run_active = true
+	shipping_unlocked = false
+	reshuffles = 1 + int(MetaState.effect_total("reshuffles", 0.0))
 
 	# Ability is chosen at the start of each run. Only "starter" abilities are
 	# available up front; others are unlocked mid-run (e.g. by repairing equipment).
@@ -52,28 +67,51 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 		if bool(GameData.abilities[ability_id].get("starter", true)):
 			available_abilities.append(ability_id)
 
-	slots.clear()
-	for i in CAPACITY:
-		slots.append({})
+	# Inventory-factory: a bare grid each run with the scrapper arm pre-placed
+	# top-left (its output/holding cells face into the grid to build lines from).
+	factory = FactoryGrid.new(FACTORY_COLS, FACTORY_ROWS)
+	factory.place_machine("scrapper_arm", Vector2i(0, 0))
 
-	# Install the area's starting recycler modules at the end of the grid so the
-	# early slots stay clear for incoming pickups. Extra recycler slots unlocked
-	# via tech add more copies of the last recycler.
-	var area: Dictionary = GameData.area(area_id)
-	var module_ids: Array = []
-	for rid: Variant in area.get("start_recyclers", []):
-		module_ids.append(String(rid))
-	var recycler_slots := int(MetaState.effect_total("recycler_slots", 1))
-	while not module_ids.is_empty() and module_ids.size() < recycler_slots:
-		module_ids.append(module_ids.back())
-	var index := CAPACITY - 1
-	for module_id: String in module_ids:
-		if index < 0:
-			break
-		slots[index] = {"kind": "module", "id": module_id, "buffer": 0, "progress": 0.0}
-		index -= 1
+	# Start with a Scrap Recycler in stock so junk can be processed from the first run.
+	machine_stock = {"scrap_recycler": 1}
 
 	run_started.emit()
+
+
+func unlock_shipping() -> void:
+	shipping_unlocked = true
+
+
+## Cost to raise a machine from `level` to `level + 1` (paid from the factory).
+func level_cost(level: int) -> Dictionary:
+	return {"scrap_metal": level + 1}
+
+
+## Resource cost to place a machine or transport part (paid from the factory).
+func part_cost(id: String) -> Dictionary:
+	match id:
+		"__conveyor":
+			return {"scrap_metal": 1}
+		"__splitter":
+			return {"scrap_metal": 2}
+	return GameData.machines.get(id, {}).get("cost", {})
+
+
+# --------------------------------------------------------- machine stock ----
+
+func stock_count(id: String) -> int:
+	return int(machine_stock.get(id, 0))
+
+
+func take_from_stock(id: String) -> bool:
+	if stock_count(id) <= 0:
+		return false
+	machine_stock[id] = stock_count(id) - 1
+	return true
+
+
+func add_to_stock(id: String) -> void:
+	machine_stock[id] = stock_count(id) + 1
 
 
 func end_run(new_result: String) -> Dictionary:
@@ -94,66 +132,12 @@ func end_run(new_result: String) -> Dictionary:
 	return summary
 
 
-# --------------------------------------------------------------- slots ----
-
-func slot_count() -> int:
-	return slots.size()
-
-
-func get_slot(index: int) -> Dictionary:
-	if index < 0 or index >= slots.size():
-		return {}
-	return slots[index]
-
-
-func slot_is_empty(index: int) -> bool:
-	return get_slot(index).is_empty()
-
-
-func first_empty() -> int:
-	for i in slots.size():
-		if slots[i].is_empty():
-			return i
-	return -1
-
-
-func has_space() -> bool:
-	return first_empty() != -1
-
-
-## Moves/swaps slot contents. If the destination is a recycler module and the
-## source is a resource that recycler accepts, the source is instead fed into the
-## module's buffer (consumed). Returns true if anything changed.
-func move_slot(from_index: int, to_index: int) -> bool:
-	if from_index == to_index:
-		return false
-	if from_index < 0 or to_index < 0 or from_index >= slots.size() or to_index >= slots.size():
-		return false
-	var source: Dictionary = slots[from_index]
-	var target: Dictionary = slots[to_index]
-	if source.is_empty():
-		return false
-	if _feed_recycler(source, target, from_index):
-		return true
-	slots[from_index] = target
-	slots[to_index] = source
-	inventory_changed.emit("", 0)
-	return true
-
-
-func _feed_recycler(source: Dictionary, target: Dictionary, from_index: int) -> bool:
-	if target.get("kind", "") != "module" or source.get("kind", "") != "resource":
-		return false
-	var def: Dictionary = GameData.recyclers.get(String(target.get("id", "")), {})
-	if def.is_empty() or String(source.get("id", "")) != String(def.get("input", "")):
-		return false
-	target["buffer"] = int(target.get("buffer", 0)) + 1
-	slots[from_index] = {}
-	inventory_changed.emit(String(source.id), get_quantity(String(source.id)))
-	return true
-
-
 # --------------------------------------------------------- quantities ----
+
+## True if the factory grid has at least one free cell for an incoming item.
+func has_space() -> bool:
+	return factory != null and factory.has_empty()
+
 
 ## Makes an ability choosable this run. Returns false if already available.
 func unlock_ability(ability_id: String) -> bool:
@@ -172,45 +156,30 @@ func first_locked_ability() -> String:
 
 
 func get_quantity(resource_id: String) -> int:
-	var count := 0
-	for slot: Dictionary in slots:
-		if slot.get("kind", "") == "resource" and String(slot.get("id", "")) == resource_id:
-			count += 1
-	return count
+	return int(resource_counts().get(resource_id, 0))
 
 
 func resource_counts() -> Dictionary:
-	var counts := {}
-	for slot: Dictionary in slots:
-		if slot.get("kind", "") == "resource":
-			var id := String(slot.id)
-			counts[id] = int(counts.get(id, 0)) + 1
-	return counts
+	return factory.resource_counts() if factory != null else {}
 
 
-## Adds (amount > 0) resource units into empty slots, or removes (amount < 0)
-## units of that resource. Returns the number of units actually added/removed.
+## Adds (amount > 0) resource items into free factory cells, or removes (amount < 0)
+## items of that resource. Returns the number actually added/removed.
 func add(resource_id: String, amount := 1) -> int:
+	if factory == null:
+		return 0
 	if amount > 0:
 		var placed := 0
-		for i in slots.size():
-			if placed >= amount:
-				break
-			if slots[i].is_empty():
-				slots[i] = {"kind": "resource", "id": resource_id}
+		for _i in amount:
+			if factory.add_resource(resource_id):
 				placed += 1
+			else:
+				break
 		if placed > 0:
 			inventory_changed.emit(resource_id, get_quantity(resource_id))
 		return placed
 	elif amount < 0:
-		var to_remove := -amount
-		var removed := 0
-		for i in slots.size():
-			if removed >= to_remove:
-				break
-			if slots[i].get("kind", "") == "resource" and String(slots[i].get("id", "")) == resource_id:
-				slots[i] = {}
-				removed += 1
+		var removed := factory.remove_resource(resource_id, -amount)
 		if removed > 0:
 			inventory_changed.emit(resource_id, get_quantity(resource_id))
 		return removed

@@ -1,24 +1,12 @@
 {
-  "_comment": "Things Grobit can construct during a run. 'cost' is spent from the run inventory on placement.",
+  "_comment": "Things Grobit can construct in the world during a run (not factory machines). 'cost' is spent from the factory inventory on placement.",
   "buildables": {
     "respawn_beacon": {
       "name": "Respawn Beacon",
       "icon": "respawn_beacon",
       "color": "3ad6a2",
-      "cost": { "metal": 3 },
+      "cost": { "scrap_metal": 2 },
       "uses": 2
-    },
-    "extraction_beacon": {
-      "name": "Extraction Beacon",
-      "icon": "extraction_beacon",
-      "color": "e6a13a",
-      "cost": { "metal": 5, "electronics": 2 }
-    },
-    "fabricator": {
-      "name": "Fabricator",
-      "icon": "fabricator",
-      "color": "4f7fae",
-      "cost": { "metal": 4, "electronics": 1 }
     }
   }
 }

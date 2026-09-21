@@ -1,17 +1,15 @@
 class_name Hud
 extends CanvasLayer
 ## Rough prototype HUD, built entirely in code so it needs no authored scene.
-## Shows health, abilities, resources, recycler + manufacturing progress, build
-## and interaction prompts, a short message log, and the end-of-run summary with
+## Shows health, abilities, factory resources, manufacturing progress, build and
+## interaction prompts, a short message log, and the end-of-run summary with
 ## permanent tech unlocks. Intentionally utilitarian — readability over polish.
 
-const RESOURCE_ORDER := ["raw_scrap", "metal", "electronics", "power_cell", "circuit_board", "tech_data"]
+const RESOURCE_ORDER := ["bent_panel", "cable_bundle", "burnt_board", "broken_motor", "mixed_components", "scrap_metal", "copper_wire", "electronic_scrap", "polymer", "mechanical_parts", "metal_bar", "metal_plate", "refined_copper", "polymer_sheet", "circuit_board", "motor", "structural_frame", "control_unit", "tech_data"]
 
 var _player: GrobitPlayer
 var _combat: PlayerCombat
 var _abilities: GrobitAbilities
-var _recyclers: RecyclerSystem
-var _manufacturing: Manufacturing
 var _build: BuildManager
 
 var _status: Label
@@ -21,20 +19,23 @@ var _prompt: Label
 var _messages: Array = []
 
 var _minimap: Minimap
-var _inventory: InventoryPanel
-var _manufacture: ManufacturePanel
+var _factory: FactoryPanel
+var _scrap_minigame: ScrapMinigame
+var _cartridge: CartridgePanel
+var _decode: DecodePanel
 var _ability_choice: AbilityChoicePanel
+var _build_palette: BuildPalette
 var _summary_panel: Control
 var _summary_label: Label
 
 
-func setup(player: GrobitPlayer, recyclers: RecyclerSystem, manufacturing: Manufacturing, build: BuildManager, generator: AreaGenerator) -> void:
+func setup(player: GrobitPlayer, build: BuildManager, generator: AreaGenerator) -> void:
 	_player = player
 	_combat = player.get_node("Combat") as PlayerCombat
 	_abilities = player.get_node("Abilities") as GrobitAbilities
-	_recyclers = recyclers
-	_manufacturing = manufacturing
 	_build = build
+	_build_palette.setup(build)
+	_scrap_minigame.setup(player)
 	_minimap = Minimap.new()
 	_minimap.position = Vector2(490, 6)
 	add_child(_minimap)
@@ -69,7 +70,7 @@ func _process(_delta: float) -> void:
 	if _summary_panel.visible:
 		_summary_label.text = _summary_text()
 	if _minimap != null:
-		_minimap.visible = not (_inventory.is_open() or _manufacture.is_open() or _ability_choice.is_open())
+		_minimap.visible = not (_factory.is_open() or _scrap_minigame.is_open() or _cartridge.is_open() or _decode.is_open() or _ability_choice.is_open())
 	_handle_toggles()
 
 
@@ -79,12 +80,22 @@ func open_ability_choice() -> void:
 		_ability_choice.open()
 
 
-## Manufacturing requires a built Fabricator (interact with one, or press M near/with one).
-func open_manufacture() -> void:
-	if get_tree().get_nodes_in_group("fabricators").is_empty():
-		log_message("Build a Fabricator to manufacture components.")
-		return
-	_manufacture.open()
+## Opens the scrapping minigame for a node (called by ScrapNode.interact()).
+func open_scrap_minigame(node: ScrapNode) -> void:
+	if _scrap_minigame != null:
+		_scrap_minigame.open(node)
+
+
+## Opens the retrieval-cartridge loader (called by RetrievalPad.interact()).
+func open_cartridge() -> void:
+	if _cartridge != null:
+		_cartridge.open()
+
+
+## Opens the module decode draft (called by DecodeStation.interact()).
+func open_decode(cost: Dictionary) -> void:
+	if _decode != null:
+		_decode.open(cost)
 
 
 func log_message(text: String) -> void:
@@ -98,6 +109,12 @@ func log_message(text: String) -> void:
 func _handle_toggles() -> void:
 	if _ability_choice.is_open():
 		return  # run-start ability choice owns input until confirmed
+	if _scrap_minigame.is_open():
+		return  # the minigame owns input (A/D/Space/F/Esc) while open
+	if _cartridge.is_open():
+		return  # the cartridge loader owns input while open
+	if _decode.is_open():
+		return  # the decode draft owns input while open
 	if _summary_panel.visible:
 		if Input.is_action_just_pressed("confirm"):
 			var controller := get_parent() as RunController
@@ -109,21 +126,13 @@ func _handle_toggles() -> void:
 				_try_unlock_tech(i)
 		return
 
-	# Inventory and manufacturing are full-screen modals; only one open at a time,
-	# each owns input (and closes with its own key) while open.
-	if _inventory.is_open():
+	# The factory panel is a full-screen modal that owns input while open.
+	if _factory.is_open():
 		if Input.is_action_just_pressed("toggle_inventory"):
-			_inventory.close()
-		return
-	if _manufacture.is_open():
-		if Input.is_action_just_pressed("toggle_manufacture"):
-			_manufacture.close()
+			_factory.close()
 		return
 	if Input.is_action_just_pressed("toggle_inventory"):
-		_inventory.open()
-		return
-	if Input.is_action_just_pressed("toggle_manufacture"):
-		open_manufacture()
+		_factory.open()
 		return
 
 
@@ -151,21 +160,9 @@ func _locked_tech_ids() -> Array:
 func _status_text() -> String:
 	var lines: Array = []
 	lines.append("Ability:  " + _ability_text())
-	for state: Dictionary in _recyclers.states():
-		var suffix := "buffer %d/%d" % [state.buffer, state.input_amount]
-		if state.working:
-			suffix += "  %d%%" % int(state.ratio * 100.0)
-		lines.append("Recycler: %s -> %s  (%s)" % [GameData.resource_name(state.input), GameData.resource_name(state.output), suffix])
-	if not _manufacturing.current_recipe().is_empty():
-		lines.append("Manufacturing: %s  %d%%  (queue %d)" % [
-			GameData.recipes[_manufacturing.current_recipe()].get("name", ""),
-			int(_manufacturing.current_ratio() * 100.0),
-			_manufacturing.queue_size()])
-	if _build.is_build_active():
-		lines.append(_build.status_line())
 	lines.append("Resources: " + _resource_line())
 	lines.append("Shooting is automatic.   [Space] use ability   [Tab] switch target   [F] interact")
-	lines.append("[I] inventory   [M] manufacture   [B] build (WASD move, Space place)")
+	lines.append("[I] factory   [B] build   [F] interact/scrap")
 	for msg: Dictionary in _messages:
 		lines.append("> " + String(msg.text))
 	return "\n".join(lines)
@@ -181,11 +178,11 @@ func _ability_text() -> String:
 
 
 func _resource_line() -> String:
+	# Show what's actually in the factory grid (where harvested/refined items live).
+	var counts := RunState.factory.resource_counts() if RunState.factory != null else {}
 	var parts: Array = []
-	for id: String in RESOURCE_ORDER:
-		var qty := RunState.get_quantity(id)
-		if qty > 0:
-			parts.append("%s %d" % [GameData.resource_name(id), qty])
+	for id: String in counts:
+		parts.append("%s %d" % [GameData.resource_name(String(id)), int(counts[id])])
 	return "none" if parts.is_empty() else "   ".join(parts)
 
 
@@ -209,6 +206,8 @@ func _summary_text() -> String:
 			lines.append("AREA COMPLETE — Power Generator repaired!")
 		RunState.RESULT_EXTRACTED:
 			lines.append("EXTRACTED — you left the area safely.")
+		RunState.RESULT_SHIPPED:
+			lines.append("SHIPPED — retrieval cartridge sent home to Mars.")
 		_:
 			lines.append("RUN LOST — no respawn beacon remained.")
 	lines.append("")
@@ -218,6 +217,9 @@ func _summary_text() -> String:
 		if qty > 0:
 			lines.append("  %s: %d" % [GameData.resource_name(id), qty])
 	lines.append("")
+	if RunState.result == RunState.RESULT_SHIPPED and not RunState.last_run_unlocks.is_empty():
+		lines.append("NEW: unlocked %s" % ", ".join(RunState.last_run_unlocks))
+	lines.append("Delivered to Mars (all runs): %d" % MetaState.mars_total())
 	lines.append("Banked Tech Data: %d" % MetaState.tech_data)
 	var locked := _locked_tech_ids()
 	if locked.is_empty():
@@ -270,17 +272,29 @@ func _build_ui() -> void:
 	_prompt.modulate = Color(1, 0.95, 0.6)
 	_add_control(_prompt)
 
-	# Full-window grid inventory (modal), hidden until toggled.
-	_inventory = InventoryPanel.new()
-	add_child(_inventory)
+	# Inventory-factory grid — opened with [I].
+	_factory = FactoryPanel.new()
+	add_child(_factory)
 
-	# Full-window manufacturing grid (modal), hidden until toggled.
-	_manufacture = ManufacturePanel.new()
-	add_child(_manufacture)
+	# Real-time scrapping minigame overlay (opened by interacting with a scrap node).
+	_scrap_minigame = ScrapMinigame.new()
+	add_child(_scrap_minigame)
+
+	# Retrieval-cartridge loader (opened from the retrieval pad once shipping is on).
+	_cartridge = CartridgePanel.new()
+	add_child(_cartridge)
+
+	# Module decode draft (opened from a decode station).
+	_decode = DecodePanel.new()
+	add_child(_decode)
 
 	# Run-start ability chooser (modal), opened from setup().
 	_ability_choice = AbilityChoicePanel.new()
 	add_child(_ability_choice)
+
+	# Non-modal build palette overlay, visible only while build mode is active.
+	_build_palette = BuildPalette.new()
+	add_child(_build_palette)
 
 	# End-of-run summary (center), hidden until the run ends.
 	_summary_panel = _make_panel(Vector2(120, 60), Vector2(420, 340))

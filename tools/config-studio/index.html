@@ -339,28 +339,36 @@ function generate(P){
   // ----- tile grid -----
   const C=P.cs, TW=W*C, TH=H*C;
   const roomAtTile=(tx,ty)=>cell[idx((tx/C)|0,(ty/C)|0)];
-  const isWall=(tx,ty)=>{const r=roomAtTile(tx,ty); for(const[dx,dy]of NB){const nx=tx+dx,ny=ty+dy; if(nx<0||ny<0||nx>=TW||ny>=TH) return true; if(roomAtTile(nx,ny)!==r) return true;} return false;};
+  // Single shared wall: a boundary tile is a wall only on the lower-index room's
+  // side (or the map edge), so adjacent rooms are one tile apart.
+  const isWallBase=(tx,ty)=>{const r=roomAtTile(tx,ty); for(const[dx,dy]of NB){const nx=tx+dx,ny=ty+dy; if(nx<0||ny<0||nx>=TW||ny>=TH) return true; if(roomAtTile(nx,ny)>r) return true;} return false;};
+  // Plus fill diagonal corner gaps (lower-index side) for proper 90° corners.
+  const isWall=(tx,ty)=>{ if(isWallBase(tx,ty)) return true; const r=roomAtTile(tx,ty);
+    for(const[dx,dy]of[[1,1],[1,-1],[-1,1],[-1,-1]]){const dxp=tx+dx,dyp=ty+dy; if(dxp<0||dyp<0||dxp>=TW||dyp>=TH) continue; if(roomAtTile(dxp,dyp)<=r) continue; if(isWallBase(tx+dx,ty)&&isWallBase(tx,ty+dy)) return true;}
+    return false;};
 
-  // carve doorways for connected pairs
+  // carve one shared wall tile per connection into a door
   const doorFloors=new Set(),doors=[];
   for(const c of connected){const[a,b]=c.split(",").map(Number);
-    // border tile pairs (ta in a adjacent to tb in b)
-    const pairs=[];
-    for(let ty=0;ty<TH;ty++)for(let tx=0;tx<TW;tx++){const r=roomAtTile(tx,ty); if(r!==a)continue;
-      for(const[dx,dy]of NB){const nx=tx+dx,ny=ty+dy; if(nx<0||ny<0||nx>=TW||ny>=TH)continue; if(roomAtTile(nx,ny)===b) pairs.push([tx,ty,nx,ny]);}}
-    if(!pairs.length)continue;
-    // pick a start pair, extend along the shared edge for door width
-    const start=pairs[(rng()*pairs.length)|0];
-    const horiz=start[0]!==start[2]; // door passage is horizontal (wall is vertical)
+    const lo=Math.min(a,b),hi=Math.max(a,b);
+    // lo's boundary tiles adjacent to hi are the single shared walls. A door only
+    // works where floor is open on BOTH sides, so corner tiles are skipped (they
+    // stay walls) and doors land mid-edge where they're reachable.
+    const wdir=new Map(); const accessible=[],fallback=[];
+    for(let ty=0;ty<TH;ty++)for(let tx=0;tx<TW;tx++){ if(roomAtTile(tx,ty)!==lo)continue;
+      for(const[dx,dy]of NB){const nx=tx+dx,ny=ty+dy; if(nx<0||ny<0||nx>=TW||ny>=TH)continue; if(roomAtTile(nx,ny)===hi){
+        wdir.set(tx+","+ty,[dx,dy]); fallback.push([tx,ty]);
+        const lax=tx-dx,lay=ty-dy;
+        if(lax>=0&&lay>=0&&lax<TW&&lay<TH&&!isWall(lax,lay)&&!isWall(nx,ny)) accessible.push([tx,ty]);
+        break;}}}
+    const pool=accessible.length?accessible:fallback;
+    if(!pool.length)continue;
+    const start=pool[(rng()*pool.length)|0];
+    const dh=wdir.get(start[0]+","+start[1]);
+    const along=dh[0]!==0?[0,1]:[1,0]; // step along the shared edge for width
     for(let k=0;k<P.dw;k++){
-      const off=k;
-      let sel=null;
-      for(const p of pairs){ if(horiz){ if(p[0]===start[0]&&p[1]===start[1]+off) sel=p; } else { if(p[1]===start[1]&&p[0]===start[0]+off) sel=p; } }
-      if(sel){
-        // Carve both wall tiles: one is the grid-aligned door, one its approach.
-        doorFloors.add(sel[0]+","+sel[1]);doorFloors.add(sel[2]+","+sel[3]);
-        doors.push(sel);
-      }
+      const dt=[start[0]+along[0]*k,start[1]+along[1]*k];
+      if(wdir.has(dt[0]+","+dt[1])){ doorFloors.add(dt[0]+","+dt[1]); doors.push(dt); }
     }
   }
 

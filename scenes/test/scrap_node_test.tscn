@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b0scrapnodetest01"]
+
+[ext_resource type="Script" path="res://scripts/world/scrap_node_test.gd" id="1"]
+
+[node name="ScrapNodeTest" type="Node"]
+script = ExtResource("1")

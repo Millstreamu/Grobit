@@ -16,6 +16,10 @@ var _selected := 0
 var _preview: Sprite2D
 var _selector: Selector
 var _cursor_tile := Vector2i.ZERO
+# Last frame's placement checks, so the build palette can explain why a spot is
+# (in)valid without recomputing the physics query.
+var _valid_here := false
+var _affordable := false
 
 
 func _ready() -> void:
@@ -31,6 +35,11 @@ func _ready() -> void:
 	add_child(_selector)
 	_selector.clear()
 	_refresh_preview_texture()
+	# Debug hook (env-gated): open build mode with a little stock so the palette can
+	# be inspected/screenshotted in headless or windowed runs.
+	if OS.has_environment("GROBIT_OPEN_BUILD"):
+		RunState.add("scrap_metal", 4)
+		_set_active.call_deferred(true)
 
 
 func _process(_delta: float) -> void:
@@ -44,11 +53,15 @@ func _process(_delta: float) -> void:
 	for i in mini(4, _buildable_ids.size()):
 		if Input.is_action_just_pressed("hotbar_%d" % (i + 1)):
 			_select(i)
+	if Input.is_action_just_pressed("cycle_target") and not _buildable_ids.is_empty():
+		_select((_selected + 1) % _buildable_ids.size())
 
 	_move_cursor()
 	var pos := _tile_center(_cursor_tile)
 	_preview.global_position = pos
-	var ok := _is_valid(pos) and RunState.can_afford(_current_cost())
+	_valid_here = _is_valid(pos)
+	_affordable = RunState.can_afford(_current_cost())
+	var ok := _valid_here and _affordable
 	_preview.modulate = Color(0.4, 1, 0.4, 0.6) if ok else Color(1, 0.4, 0.4, 0.6)
 	_selector.highlight(pos, 32)
 	_selector.set_color(Color(0.4, 1, 0.4) if ok else Color(1, 0.4, 0.4))
@@ -67,14 +80,25 @@ func selected_buildable() -> String:
 	return _buildable_ids[_selected]
 
 
-func status_line() -> String:
+## Read by the build palette UI.
+func buildable_ids() -> Array[String]:
+	return _buildable_ids
+
+
+func selected_index() -> int:
+	return _selected
+
+
+## "" when the current cursor tile is a legal, affordable placement; otherwise a
+## short reason the palette shows in red (position problems take priority).
+func placement_reason() -> String:
 	if not _active:
 		return ""
-	var id := selected_buildable()
-	var def: Dictionary = GameData.buildables.get(id, {})
-	return "BUILD: %s  (%s)   [1-%d] select   [WASD] move   [Space] place   [B/Esc] exit" % [
-		String(def.get("name", id)), _cost_text(_current_cost()), _buildable_ids.size()
-	]
+	if not _valid_here:
+		return "Can't build there"
+	if not _affordable:
+		return "Not enough resources"
+	return ""
 
 
 func _set_active(value: bool) -> void:
@@ -186,24 +210,5 @@ func _instantiate_buildable(id: String) -> Node2D:
 			beacon.buildable_id = id
 			beacon.uses = int(GameData.buildables.get(id, {}).get("uses", 2))
 			return beacon
-		"extraction_beacon":
-			var beacon := ExtractionBeacon.new()
-			beacon.buildable_id = id
-			# The run controller connects to this to end the run.
-			for controller: Node in get_tree().get_nodes_in_group("run_controller"):
-				if controller.has_method("on_extraction_confirmed"):
-					beacon.extract_confirmed.connect(controller.on_extraction_confirmed)
-			return beacon
-		"fabricator":
-			var machine := Fabricator.new()
-			machine.buildable_id = id
-			return machine
 	push_error("BuildManager has no buildable named '%s'." % id)
 	return null
-
-
-func _cost_text(cost: Dictionary) -> String:
-	var parts: Array = []
-	for res: String in cost:
-		parts.append("%d %s" % [int(cost[res]), GameData.resource_name(res)])
-	return ", ".join(parts)

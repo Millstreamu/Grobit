@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dys5wocygd2ym"]
+
+[ext_resource type="Script" path="res://scripts/world/factory_gating_test.gd" id="1"]
+
+[node name="FactoryGatingTest" type="Node"]
+script = ExtResource("1")

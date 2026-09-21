@@ -1,11 +1,29 @@
 {
-  "_comment": "Gameplay resource definitions. 'icon' is an atlas sprite id (see content/atlases). Missing icons fall back to a generated placeholder and are reported at runtime.",
+  "_comment": "Salvage economy (see docs Machines/Scrapables/Resources reference). JUNK is harvested from nodes via the scrapping minigame; MATERIALS come from processing junk in grid machines; PROCESSED/COMPONENTS are deeper craft outputs and ship targets. Keep raw types small; complexity comes from processing.",
   "resources": {
-    "raw_scrap": { "name": "Raw Scrap", "icon": "raw_material", "color": "8a7f6d" },
-    "metal": { "name": "Metal", "icon": "scrap_metal", "color": "b9c2cc" },
-    "electronics": { "name": "Electronics", "icon": "electronics", "color": "4fae6b" },
-    "power_cell": { "name": "Power Cell", "icon": "power_cell", "color": "e0b23a" },
+    "bent_panel": { "name": "Bent Panel", "icon": "bent_panel", "color": "8a7f6d" },
+    "cable_bundle": { "name": "Cable Bundle", "icon": "cable_bundle", "color": "b5453a" },
+    "burnt_board": { "name": "Burnt Circuit Board", "icon": "burnt_board", "color": "3f6f4a" },
+    "broken_motor": { "name": "Broken Motor", "icon": "broken_motor", "color": "6d6d75" },
+
+    "mixed_components": { "name": "Mixed Components", "icon": "mixed_components", "color": "7a6f5d" },
+
+    "scrap_metal": { "name": "Scrap Metal", "icon": "scrap_metal", "color": "b9c2cc" },
+    "copper_wire": { "name": "Copper Wire", "icon": "copper_wire", "color": "c8722e" },
+    "electronic_scrap": { "name": "Electronic Scrap", "icon": "electronic_scrap", "color": "4fae6b" },
+    "polymer": { "name": "Polymer", "icon": "polymer", "color": "3fb6a8" },
+    "mechanical_parts": { "name": "Mechanical Parts", "icon": "mechanical_parts", "color": "9a7b4a" },
+
+    "metal_bar": { "name": "Metal Bar", "icon": "metal_bar", "color": "cdd3da" },
+    "metal_plate": { "name": "Metal Plate", "icon": "metal_plate", "color": "dde3ea" },
+    "refined_copper": { "name": "Refined Copper", "icon": "refined_copper", "color": "e08a3a" },
+    "polymer_sheet": { "name": "Polymer Sheet", "icon": "polymer_sheet", "color": "5fc9bc" },
     "circuit_board": { "name": "Circuit Board", "icon": "circuit_board", "color": "2f8f6f" },
+
+    "motor": { "name": "Motor", "icon": "motor", "color": "b08a4a" },
+    "structural_frame": { "name": "Structural Frame", "icon": "structural_frame", "color": "9aa2ab" },
+    "control_unit": { "name": "Control Unit", "icon": "control_unit", "color": "cfd2d6" },
+
     "tech_data": { "name": "Tech Data", "icon": "tech_data", "color": "5aa9e6" }
   }
 }

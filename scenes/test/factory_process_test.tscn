@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b0factoryproctest1"]
+
+[ext_resource type="Script" path="res://scripts/world/factory_process_test.gd" id="1"]
+
+[node name="FactoryProcessTest" type="Node"]
+script = ExtResource("1")

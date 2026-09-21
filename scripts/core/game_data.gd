@@ -8,24 +8,27 @@ extends Node
 const DATA_DIR := "res://data/game/"
 
 var resources: Dictionary = {}
-var recyclers: Dictionary = {}
-var recipes: Dictionary = {}
+var recipes: Array = []  # list of grid-machine recipes (see recipes.json)
 var buildables: Dictionary = {}
 var tech: Dictionary = {}
 var enemies: Dictionary = {}
 var abilities: Dictionary = {}
+var machines: Dictionary = {}
+var modules: Dictionary = {}
 var generation: Dictionary = {}
 var areas: Dictionary = {}
 
 
 func _ready() -> void:
 	resources = _load("resources.json").get("resources", {})
-	recyclers = _load("recyclers.json").get("recyclers", {})
-	recipes = _load("recipes.json").get("recipes", {})
+	recipes = _load("recipes.json").get("recipes", [])
 	buildables = _load("buildables.json").get("buildables", {})
 	tech = _load("tech.json").get("tech", {})
 	enemies = _load("enemies.json").get("enemies", {})
 	abilities = _load("abilities.json").get("abilities", {})
+	# Factory machines that live in the inventory grid (inventory-factory redesign).
+	machines = _load("machines.json").get("machines", {})
+	modules = _load("modules.json").get("modules", {})
 	# Map-shape parameters authored in the Config Studio tool (optional file).
 	generation = _load("generation.json").get("generation", {})
 	areas = _load("area.json").get("areas", {})
@@ -41,6 +44,15 @@ func resource_icon(id: String) -> String:
 
 func resource_color(id: String) -> String:
 	return String(resources.get(id, {}).get("color", ""))
+
+
+## Recipes that run on a given machine id (in list order — first satisfied wins).
+func recipes_for(machine_id: String) -> Array:
+	var out: Array = []
+	for recipe: Dictionary in recipes:
+		if String(recipe.get("machine", "")) == machine_id:
+			out.append(recipe)
+	return out
 
 
 func area(area_id: String) -> Dictionary:

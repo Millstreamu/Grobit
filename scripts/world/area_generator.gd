@@ -2,10 +2,10 @@ class_name AreaGenerator
 extends Node2D
 ## Seeded generator ported from the Config Studio tool (tools/config-studio).
 ## No corridors: rooms are irregular unions of grid CELLS (complex shapes) grown
-## to fill a W×H cell grid, packed together. Adjacent rooms share a 2-tile wall
-## with carved DOORWAYS at connections (spanning tree + loop_chance extra loops).
-## Each passage has one grid-aligned door tile and one open approach tile; doors
-## are never positioned on the half-tile boundary between rooms.
+## to fill a W×H cell grid, packed together. Adjacent rooms are separated by a
+## single shared wall tile (on the lower-index room's side); a connection carves
+## exactly ONE of those tiles into a grid-aligned door (spanning tree +
+## loop_chance extra loops) — no corridors, no double walls.
 ## Map-shape params come from data/game/generation.json (GameData.generation);
 ## gameplay params (enemy counts, room-type mix, harvest/repair/etc.) from area.json.
 
@@ -24,8 +24,8 @@ var _C := 5
 var _TW := 0
 var _TH := 0
 var _cell: Array = []          # room index per grid cell
-var _door_floors: Dictionary = {}  # both wall tiles carved for each passage
-var _doorways: Array = []           # [room a, room b, tile a, tile b] per shared door
+var _door_floors: Dictionary = {}  # the single wall tile carved for each passage
+var _doorways: Array = []           # [room a, room b, door tile] per shared door
 
 var _floors: Node2D
 var _wall_sprites: Node2D
@@ -242,35 +242,44 @@ func _carve_doors(rng: RandomNumberGenerator, connections: Array, door_width: in
 	for edge: Array in connections:
 		var a: int = edge[0]
 		var b: int = edge[1]
-		var pairs: Array = []  # [ta:Vector2i, tb:Vector2i] border tile pairs (a beside b)
+		var lo := mini(a, b)
+		var hi := maxi(a, b)
+		# The single shared wall lives on the lower room's boundary tiles adjacent
+		# to the higher room. A tile only makes a usable door when the floor on
+		# BOTH sides is open — so corner tiles (a wall on the approach) are skipped
+		# and stay walls, and doors land mid-edge where they're actually reachable.
+		var wall_dir := {}  # Vector2i tile -> direction toward the higher room
+		var accessible: Array = []
+		var fallback: Array = []
 		for ty in _TH:
 			for tx in _TW:
-				if _room_of_tile(tx, ty) != a:
+				if _room_of_tile(tx, ty) != lo:
 					continue
 				for d: Vector2i in DIRS:
 					var nx := tx + d.x
 					var ny := ty + d.y
 					if nx < 0 or ny < 0 or nx >= _TW or ny >= _TH:
 						continue
-					if _room_of_tile(nx, ny) == b:
-						pairs.append([Vector2i(tx, ty), Vector2i(nx, ny)])
-		if pairs.is_empty():
+					if _room_of_tile(nx, ny) == hi:
+						var t := Vector2i(tx, ty)
+						wall_dir[t] = d
+						fallback.append(t)
+						var lo_app := t - d  # approach into the lower room
+						if lo_app.x >= 0 and lo_app.y >= 0 and lo_app.x < _TW and lo_app.y < _TH \
+								and not _is_wall(lo_app.x, lo_app.y) and not _is_wall(nx, ny):
+							accessible.append(t)
+						break
+		var pool: Array = accessible if not accessible.is_empty() else fallback
+		if pool.is_empty():
 			continue
-		var start: Array = pairs[rng.randi_range(0, pairs.size() - 1)]
-		var horiz: bool = start[0].x != start[1].x  # passage runs vertically along the shared edge
+		var start: Vector2i = pool[rng.randi_range(0, pool.size() - 1)]
+		var to_hi: Vector2i = wall_dir[start]
+		var along := Vector2i(0, 1) if to_hi.x != 0 else Vector2i(1, 0)
 		for k in door_width:
-			for p: Array in pairs:
-				var match_pair := false
-				if horiz:
-					match_pair = p[0].x == start[0].x and p[0].y == start[0].y + k
-				else:
-					match_pair = p[0].y == start[0].y and p[0].x == start[0].x + k
-				if match_pair:
-					# The adjoining rooms each contribute a wall tile to the passage,
-					# but they share one Door positioned on the boundary between them.
-					_door_floors[p[0]] = true
-					_door_floors[p[1]] = true
-					_doorways.append([a, b, p[0], p[1]])
+			var t: Vector2i = start + along * k
+			if wall_dir.has(t):
+				_door_floors[t] = true
+				_doorways.append([a, b, t])
 
 
 # --------------------------------------------------------------- build ----
@@ -330,14 +339,13 @@ func _render_tiles() -> void:
 			else:
 				_add_floor(floor_texture, world)
 				rooms[r].interior_tiles.append(world)
-	# A doorway belongs to both adjacent rooms. One of the two former wall tiles is
-	# the grid-aligned door and the other is its open approach. Sharing that Door
-	# ensures either room locks the one physical barrier instead of making two.
+	# One shared door tile per passage, owned by both adjacent rooms so either can
+	# lock the single physical barrier.
 	for doorway: Array in _doorways:
 		var door := Door.new()
 		_doors_root.add_child(door)
-		var tile_a: Vector2i = doorway[2]
-		door.global_position = Vector2(tile_a) * tile + Vector2.ONE * tile * 0.5
+		var door_tile: Vector2i = doorway[2]
+		door.global_position = Vector2(door_tile) * tile + Vector2.ONE * tile * 0.5
 		rooms[doorway[0]].doors.append(door)
 		rooms[doorway[1]].doors.append(door)
 	# Player starts in the middle of the start room.
@@ -448,14 +456,40 @@ func _room_of_tile(tx: int, ty: int) -> int:
 	return _cell[(ty / _C) * _W + (tx / _C)]
 
 
-func _is_wall(tx: int, ty: int) -> bool:
+const DIAGONALS := [Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1)]
+
+
+# Single shared wall between rooms: a boundary tile is only a wall on the
+# lower-index room's side (or at the map edge). Adjacent rooms are separated by
+# exactly ONE wall tile, so carving it makes a true one-tile door.
+func _is_wall_base(tx: int, ty: int) -> bool:
 	var r := _room_of_tile(tx, ty)
 	for d: Vector2i in DIRS:
 		var nx := tx + d.x
 		var ny := ty + d.y
 		if nx < 0 or ny < 0 or nx >= _TW or ny >= _TH:
 			return true
-		if _room_of_tile(nx, ny) != r:
+		if _room_of_tile(nx, ny) > r:
+			return true
+	return false
+
+
+func _is_wall(tx: int, ty: int) -> bool:
+	if _is_wall_base(tx, ty):
+		return true
+	# Fill diagonal corner gaps so wall turns are proper 90° corners (no two walls
+	# sitting only diagonally with floor between them). Only the lower-index room's
+	# tile fills, and only when both tiles bridging to the diagonal are already
+	# walls — so straight edges stay single-thickness.
+	var r := _room_of_tile(tx, ty)
+	for diag: Vector2i in DIAGONALS:
+		var dxp := tx + diag.x
+		var dyp := ty + diag.y
+		if dxp < 0 or dyp < 0 or dxp >= _TW or dyp >= _TH:
+			continue
+		if _room_of_tile(dxp, dyp) <= r:
+			continue
+		if _is_wall_base(tx + diag.x, ty) and _is_wall_base(tx, ty + diag.y):
 			return true
 	return false
 

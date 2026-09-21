@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dwkuos2uq7bg"]
+
+[ext_resource type="Script" path="res://scripts/world/minigame_input_test.gd" id="1"]
+
+[node name="MinigameInputTest" type="Node"]
+script = ExtResource("1")

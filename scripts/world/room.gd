@@ -138,7 +138,7 @@ func spawn_salvage() -> void:
 		if amount <= 0:
 			continue
 		var pickup := PICKUP_SCENE.instantiate()
-		pickup.resource_id = String(drop.get("resource", "raw_scrap"))
+		pickup.resource_id = String(drop.get("resource", "scrap_metal"))
 		pickup.amount = amount
 		pickup.global_position = _random_interior_point()
 		add_child(pickup)
@@ -148,13 +148,19 @@ func spawn_salvage() -> void:
 func spawn_harvest(config: Dictionary) -> void:
 	if config.is_empty():
 		return
-	var count := rng.randi_range(int(config.get("per_room_min", 1)), int(config.get("per_room_max", 3)))
-	for i in count:
-		var node := ScrapNode.new()
-		node.yield_table = config.get("yield", [])
-		node.charges = int(config.get("charges", 3))
-		add_child(node)
-		node.global_position = _random_interior_point()
+	# New shape: config.nodes is a list of node kinds (scrap, e-waste, ...). Older
+	# single-stream configs (yield/charges/per_room_* at the top level) still work.
+	var node_defs: Array = config.get("nodes", [])
+	if node_defs.is_empty():
+		node_defs = [config]
+	for def_variant: Variant in node_defs:
+		var def: Dictionary = def_variant
+		var count := rng.randi_range(int(def.get("per_room_min", 1)), int(def.get("per_room_max", 3)))
+		for i in count:
+			var node := ScrapNode.new()
+			node.generate(def, rng)
+			add_child(node)
+			node.global_position = _random_interior_point()
 
 
 ## Places a persistent damage zone in the middle of a hazard room.

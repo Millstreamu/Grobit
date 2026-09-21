@@ -66,12 +66,13 @@ class ProjectStructureTests(unittest.TestCase):
 
         for name in (
             "resources.json",
-            "recyclers.json",
             "recipes.json",
             "buildables.json",
             "tech.json",
             "enemies.json",
             "abilities.json",
+            "machines.json",
+            "modules.json",
             "generation.json",
             "area.json",
         ):
@@ -88,6 +89,7 @@ class ProjectStructureTests(unittest.TestCase):
             "scripts/core/run_state.gd",
             "scripts/core/meta_state.gd",
             "scripts/core/health_component.gd",
+            "scripts/core/factory_grid.gd",
             "scripts/player/grobit_abilities.gd",
             "scripts/world/door.gd",
             "scripts/world/room.gd",
@@ -98,19 +100,23 @@ class ProjectStructureTests(unittest.TestCase):
             "scripts/world/interactable_object.gd",
             "scripts/world/scrap_node.gd",
             "scripts/world/repair_station.gd",
+            "scripts/world/objective_terminal.gd",
+            "scripts/world/retrieval_pad.gd",
+            "scripts/world/decode_station.gd",
             "scripts/build/build_manager.gd",
             "scripts/build/respawn_beacon.gd",
             "scripts/build/extraction_beacon.gd",
-            "scripts/build/fabricator.gd",
-            "scripts/machines/recycler_system.gd",
-            "scripts/machines/manufacturing.gd",
+            "scripts/machines/factory_processor.gd",
             "scripts/machines/power_generator.gd",
             "scripts/ui/hud.gd",
             "scripts/ui/selector.gd",
             "scripts/ui/selection_manager.gd",
             "scripts/ui/minimap.gd",
-            "scripts/ui/inventory_panel.gd",
-            "scripts/ui/manufacture_panel.gd",
+            "scripts/ui/build_palette.gd",
+            "scripts/ui/factory_panel.gd",
+            "scripts/ui/scrap_minigame.gd",
+            "scripts/ui/cartridge_panel.gd",
+            "scripts/ui/decode_panel.gd",
             "scripts/ui/ability_choice_panel.gd",
         )
         for relative_path in expected:
@@ -128,6 +134,8 @@ class ProjectStructureTests(unittest.TestCase):
             "toggle_manufacture",
             "interact",
             "hotbar_1",
+            "level_up",
+            "reshuffle",
         ):
             with self.subTest(action=action):
                 self.assertIn(action, config["input"])
@@ -190,15 +198,17 @@ class ProjectStructureTests(unittest.TestCase):
 
     def test_generated_passages_use_one_shared_door(self):
         generator = (ROOT / "scripts/world/area_generator.gd").read_text()
-        self.assertIn("_doorways.append([a, b, p[0], p[1]])", generator)
+        # Single shared wall between rooms (wall only on the lower-index side).
+        self.assertIn("if _room_of_tile(nx, ny) > r:", generator)
+        # One door tile carved per passage, one Door shared by both rooms.
+        self.assertIn("_doorways.append([a, b, t])", generator)
         self.assertEqual(generator.count("var door := Door.new()"), 1)
         self.assertIn("rooms[doorway[0]].doors.append(door)", generator)
         self.assertIn("rooms[doorway[1]].doors.append(door)", generator)
         self.assertIn(
-            "door.global_position = Vector2(tile_a) * tile + Vector2.ONE * tile * 0.5",
+            "door.global_position = Vector2(door_tile) * tile + Vector2.ONE * tile * 0.5",
             generator,
         )
-        self.assertNotIn("(Vector2(tile_a) + Vector2(tile_b)) * tile * 0.5", generator)
 
         room = (ROOT / "scripts/world/room.gd").read_text()
         self.assertIn("func _is_fully_inside(world_position: Vector2) -> bool:", room)
@@ -206,9 +216,10 @@ class ProjectStructureTests(unittest.TestCase):
         self.assertIn("if _is_fully_inside(body.global_position):", room)
 
         studio = (ROOT / "tools/config-studio/index.html").read_text()
+        # Tool mirrors the game: directional wall + one carved shared door tile.
+        self.assertIn("if(roomAtTile(nx,ny)>r) return true;", studio)
         self.assertIn("const doorFloors=new Set(),doors=[];", studio)
-        self.assertIn("doors.push(sel);", studio)
-        self.assertNotIn("doors.add(sel[0]", studio)
+        self.assertIn("doors.push(dt);", studio)
         self.assertIn("cx.fillRect(d[0]*px,d[1]*px,px,px);", studio)
 
 if __name__ == "__main__":

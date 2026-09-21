@@ -1,0 +1,90 @@
+{
+  "_comment": "Grid machines for the inventory-factory. Offsets are [x,y] relative to the core cell. 'inputs' = cells read (set-based: a recipe matches when its needs are present across the input cells). 'outputs' = cells written (a recipe's produces are distributed across free output cells). Recipes live in recipes.json keyed by machine. 'cost' is spent from the factory on a NEW build (placing from your machine stock is free). 'locked' machines unlock when 'unlock_requires' (cumulative Mars deliveries) is met. 'world:true' would mark a room/utility station (none here — those are separate interactable scripts).",
+  "machines": {
+    "scrapper_arm": {
+      "name": "Scrapper Arm",
+      "icon": "scrapper_arm",
+      "color": "c9a24a",
+      "inputs": [],
+      "outputs": [[1, 0]],
+      "holding": [[1, 0], [0, 1], [1, 1]],
+      "_note": "Pre-placed; harvested junk lands in its holding cells. Not player-placeable."
+    },
+    "scrap_recycler": {
+      "name": "Scrap Recycler",
+      "icon": "scrap_recycler",
+      "color": "9aa7b3",
+      "inputs": [[-1, 0]],
+      "outputs": [[1, 0], [1, 1]],
+      "cost": { "scrap_metal": 2 }
+    },
+    "grinder": {
+      "name": "Grinder",
+      "icon": "grinder",
+      "color": "7a6f5d",
+      "inputs": [[-1, 0]],
+      "outputs": [[1, 0]],
+      "cost": { "scrap_metal": 3 }
+    },
+    "separator": {
+      "name": "Separator",
+      "icon": "separator",
+      "color": "6f8f9a",
+      "inputs": [[-1, 0]],
+      "outputs": [[1, 0], [1, 1], [1, -1]],
+      "cost": { "scrap_metal": 2 }
+    },
+    "smelter": {
+      "name": "Smelter",
+      "icon": "smelter",
+      "color": "c86b3a",
+      "inputs": [[-1, 0]],
+      "outputs": [[1, 0]],
+      "cost": { "scrap_metal": 3 }
+    },
+    "press": {
+      "name": "Press",
+      "icon": "press",
+      "color": "8a8f97",
+      "inputs": [[-1, 0]],
+      "outputs": [[1, 0]],
+      "cost": { "scrap_metal": 3 }
+    },
+    "refiner": {
+      "name": "Refiner",
+      "icon": "refiner",
+      "color": "e08a3a",
+      "inputs": [[-1, 0]],
+      "outputs": [[1, 0]],
+      "cost": { "scrap_metal": 3 }
+    },
+    "circuit_printer": {
+      "name": "Circuit Printer",
+      "icon": "circuit_printer",
+      "color": "2f8f6f",
+      "inputs": [[-1, 0], [0, -1]],
+      "outputs": [[1, 0]],
+      "cost": { "scrap_metal": 4 }
+    },
+    "constructor": {
+      "name": "Constructor",
+      "icon": "constructor",
+      "color": "b0b6bd",
+      "inputs": [[-1, 0], [0, -1], [0, 1]],
+      "outputs": [[1, 0]],
+      "cost": { "metal_plate": 2 },
+      "locked": true,
+      "unlock_requires": { "circuit_board": 3 }
+    },
+    "assembler": {
+      "name": "Assembler",
+      "icon": "assembler",
+      "color": "8f96a0",
+      "inputs": [[-1, 0], [0, -1], [0, 1]],
+      "outputs": [[1, 0]],
+      "cost": { "metal_plate": 2 },
+      "locked": true,
+      "unlock_requires": { "control_unit": 2 }
+    }
+  }
+}
