@@ -1,0 +1,9 @@
+{
+  "_comment": "The four material families (A/B/C/D). Each maps a base material to its ammo and its specialised Ammo Maker. A run's weapon is randomly tied to one family; if no matching Ammo Maker / material is available, that run can't feed the weapon (by design — we observe this).",
+  "families": {
+    "copper":  { "name": "Copper (A)",  "letter": "A", "ammo": "charge_cells",    "ammo_maker": "copper_ammo_maker" },
+    "steel":   { "name": "Steel (B)",   "letter": "B", "ammo": "steel_slugs",     "ammo_maker": "steel_ammo_maker" },
+    "plastic": { "name": "Plastic (C)", "letter": "C", "ammo": "resin_capsules",  "ammo_maker": "plastic_ammo_maker" },
+    "ceramic": { "name": "Ceramic (D)", "letter": "D", "ammo": "ceramic_charges", "ammo_maker": "ceramic_ammo_maker" }
+  }
+}

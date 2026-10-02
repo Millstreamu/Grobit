@@ -5,7 +5,7 @@ extends CanvasLayer
 ## interaction prompts, a short message log, and the end-of-run summary with
 ## permanent tech unlocks. Intentionally utilitarian — readability over polish.
 
-const RESOURCE_ORDER := ["bent_panel", "cable_bundle", "burnt_board", "broken_motor", "mixed_components", "scrap_metal", "copper_wire", "electronic_scrap", "polymer", "mechanical_parts", "metal_bar", "metal_plate", "refined_copper", "polymer_sheet", "circuit_board", "motor", "structural_frame", "control_unit", "tech_data"]
+const RESOURCE_ORDER := ["junk", "copper_scrap", "steel_scrap", "plastic_scrap", "ceramic_scrap", "copper", "steel", "plastic", "ceramic", "charge_cells", "steel_slugs", "resin_capsules", "ceramic_charges", "power_coupling", "control_assembly", "reinforced_frame", "thermal_core", "tech_data"]
 
 var _player: GrobitPlayer
 var _combat: PlayerCombat
@@ -20,9 +20,12 @@ var _messages: Array = []
 
 var _minimap: Minimap
 var _factory: FactoryPanel
-var _scrap_minigame: ScrapMinigame
 var _cartridge: CartridgePanel
 var _decode: DecodePanel
+var _exchange: ExchangePanel
+var _fabricator: FabricatorPanel
+var _found: FoundMachinePanel
+var _run_info: RunInfoPanel
 var _ability_choice: AbilityChoicePanel
 var _build_palette: BuildPalette
 var _summary_panel: Control
@@ -35,7 +38,6 @@ func setup(player: GrobitPlayer, build: BuildManager, generator: AreaGenerator) 
 	_abilities = player.get_node("Abilities") as GrobitAbilities
 	_build = build
 	_build_palette.setup(build)
-	_scrap_minigame.setup(player)
 	_minimap = Minimap.new()
 	_minimap.position = Vector2(490, 6)
 	add_child(_minimap)
@@ -56,21 +58,37 @@ func setup(player: GrobitPlayer, build: BuildManager, generator: AreaGenerator) 
 			_ability_choice.open()
 
 
+var _last_overflow_msec := 0
+
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	add_to_group("hud")
 	_build_ui()
+	RunState.overflow.connect(_on_overflow)
+
+
+# Grid-full feedback: incoming items were lost because the factory has no room.
+func _on_overflow(resource_id: String, lost: int) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_overflow_msec < 2500:
+		return  # throttle so a burst of drops doesn't spam
+	_last_overflow_msec = now
+	log_message("Factory full — %d %s lost! Clear space in the grid." % [lost, GameData.resource_name(resource_id)])
 
 
 func _process(_delta: float) -> void:
 	if _combat == null:  # setup() not called yet
 		return
-	_status.text = _status_text()
+	if Input.is_action_just_pressed("toggle_debug"):
+		_status.visible = not _status.visible  # [`] shows/hides the debug readout
+	if _status.visible:
+		_status.text = _status_text()
 	_prompt.text = _interaction_prompt()
 	if _summary_panel.visible:
 		_summary_label.text = _summary_text()
 	if _minimap != null:
-		_minimap.visible = not (_factory.is_open() or _scrap_minigame.is_open() or _cartridge.is_open() or _decode.is_open() or _ability_choice.is_open())
+		_minimap.visible = not (_factory.is_open() or _cartridge.is_open() or _decode.is_open() or _exchange.is_open() or _fabricator.is_open() or _found.is_open() or _run_info.is_open() or _ability_choice.is_open())
 	_handle_toggles()
 
 
@@ -79,11 +97,6 @@ func open_ability_choice() -> void:
 	if _ability_choice != null:
 		_ability_choice.open()
 
-
-## Opens the scrapping minigame for a node (called by ScrapNode.interact()).
-func open_scrap_minigame(node: ScrapNode) -> void:
-	if _scrap_minigame != null:
-		_scrap_minigame.open(node)
 
 
 ## Opens the retrieval-cartridge loader (called by RetrievalPad.interact()).
@@ -98,6 +111,29 @@ func open_decode(cost: Dictionary) -> void:
 		_decode.open(cost)
 
 
+## Opens the component exchange (called by ComponentExchange.interact()).
+func open_exchange() -> void:
+	if _exchange != null:
+		_exchange.open()
+
+
+func open_fabricator() -> void:
+	if _fabricator != null:
+		_fabricator.open()
+
+
+## Shown when a machine is picked up in a room: the reveal card.
+func open_found_machine(machine_id: String) -> void:
+	if _found != null:
+		_found.open(machine_id)
+
+
+## Jumps into the inventory in place-mode for a machine (from the found card).
+func open_place_machine(machine_id: String) -> void:
+	if _factory != null:
+		_factory.open_place(machine_id)
+
+
 func log_message(text: String) -> void:
 	_messages.append({"text": text, "expires": Time.get_ticks_msec() + 4000})
 	if _messages.size() > 5:
@@ -109,12 +145,21 @@ func log_message(text: String) -> void:
 func _handle_toggles() -> void:
 	if _ability_choice.is_open():
 		return  # run-start ability choice owns input until confirmed
-	if _scrap_minigame.is_open():
-		return  # the minigame owns input (A/D/Space/F/Esc) while open
 	if _cartridge.is_open():
 		return  # the cartridge loader owns input while open
 	if _decode.is_open():
 		return  # the decode draft owns input while open
+	if _exchange.is_open():
+		return  # the component exchange owns input while open
+	if _fabricator.is_open():
+		return  # the Fabricator crafting menu owns input while open
+	if _found.is_open():
+		return  # the machine-found card owns input while open
+	if _run_info.is_open():
+		return  # the debug run-info panel owns input while open
+	if Input.is_action_just_pressed("run_info"):
+		_run_info.open()
+		return
 	if _summary_panel.visible:
 		if Input.is_action_just_pressed("confirm"):
 			var controller := get_parent() as RunController
@@ -160,10 +205,12 @@ func _locked_tech_ids() -> Array:
 func _status_text() -> String:
 	var lines: Array = []
 	lines.append("Ability:  " + _ability_text())
+	lines.append("Weapon:  " + _weapon_text())
 	lines.append("Goal:  " + _goal_text())
+	lines.append("Scrap: %d    Tech Data: %d" % [RunState.currency_count("junk"), RunState.currency_count("tech_data")])
 	lines.append("Resources: " + _resource_line())
 	lines.append("Shooting is automatic.   [Space] use ability   [Tab] switch target   [F] interact")
-	lines.append("[I] factory   [B] build   [F] interact/scrap")
+	lines.append("[I] factory (place/combine/scrap machines)   [F] interact/scrap   [P] run info")
 	for msg: Dictionary in _messages:
 		lines.append("> " + String(msg.text))
 	return "\n".join(lines)
@@ -178,8 +225,44 @@ func _ability_text() -> String:
 	return "%s: %d%%" % [_abilities.equipped_name(), int((1.0 - _abilities.cooldown_ratio()) * 100.0)]
 
 
+## Weapon family + ammo count (red when out — the run may lack a matching Ammo Maker).
+func _weapon_text() -> String:
+	# Combat uses a placed, loaded Weapon machine if you have one (stronger); otherwise
+	# Grobit's weak built-in gun. Report whichever is actually driving your shots.
+	var f := RunState.factory
+	var loaded := ""
+	var needs_ammo := ""
+	if f != null:
+		for m: Dictionary in f.machines:
+			if bool(m.get("removed", false)):
+				continue
+			var def: Dictionary = GameData.machines.get(String(m.def_id), {})
+			if not bool(def.get("weapon", false)):
+				continue
+			var ammo := String(def.get("ammo", ""))
+			var is_loaded := false
+			for p: Vector2i in f.input_positions(m):
+				var c := f.get_cell(p)
+				if String(c.get("kind", "")) == "resource" and String(c.get("id", "")) == ammo:
+					is_loaded = true
+					break
+			if is_loaded:
+				loaded = String(def.get("name", "Weapon"))
+				break
+			elif needs_ammo == "":
+				needs_ammo = "%s needs %s" % [String(def.get("name", "Weapon")), GameData.resource_name(ammo)]
+	if loaded != "":
+		return "%s — loaded" % loaded
+	if needs_ammo != "":
+		return "UNARMED — %s" % needs_ammo
+	return "UNARMED — find & repair a weapon, then feed it ammo"
+
+
 func _goal_text() -> String:
-	# Actionable "next unlock" first (before the minimap), then Mars total + ship note.
+	# First run (nothing delivered yet): show a step-by-step onboarding tip instead.
+	if MetaState.mars_total() == 0:
+		return _tip_text()
+	# Otherwise: actionable "next unlock" first, then Mars total + ship note.
 	var parts: Array = []
 	var hint := MetaState.next_unlock_hint()
 	if hint != "":
@@ -187,6 +270,26 @@ func _goal_text() -> String:
 	parts.append("Mars %d" % MetaState.mars_total())
 	parts.append("ship at pad" if RunState.shipping_unlocked else "do objective, then ship")
 	return "   •   ".join(parts)
+
+
+# Contextual next-action for a new player, based on how far they've gotten.
+func _tip_text() -> String:
+	if RunState.shipping_unlocked:
+		return "shipping is on — return to the Retrieval Pad and press [F] to ship home"
+	const JUNK := {"bent_panel": true, "cable_bundle": true, "burnt_board": true, "broken_motor": true}
+	var counts := RunState.factory.resource_counts() if RunState.factory != null else {}
+	var has_junk := false
+	var has_material := false
+	for id: String in counts:
+		if JUNK.has(id):
+			has_junk = true
+		else:
+			has_material = true
+	if has_material:
+		return "clear the objective room (kill everything) to switch on shipping"
+	if has_junk:
+		return "open the factory [I], press [B] to place your Recycler, then move junk onto its input"
+	return "find a scrap pile and press [F] to salvage junk into your arm"
 
 
 func _resource_line() -> String:
@@ -200,12 +303,16 @@ func _resource_line() -> String:
 
 func _interaction_prompt() -> String:
 	var best: Node2D
+	var best_priority := -INF
 	var best_distance := INF
 	for node: Node in get_tree().get_nodes_in_group("interactables"):
 		if not node is Node2D or not node.has_method("can_interact") or not node.can_interact():
 			continue
+		# Match SelectionManager: higher priority wins, then nearest (doors sit low).
+		var priority := int(node.interact_priority()) if node.has_method("interact_priority") else 0
 		var distance := _player.global_position.distance_to((node as Node2D).global_position)
-		if distance < best_distance:
+		if priority > best_priority or (priority == best_priority and distance < best_distance):
+			best_priority = priority
 			best_distance = distance
 			best = node
 	return best.interaction_prompt() if best != null else ""
@@ -275,8 +382,9 @@ func _build_ui() -> void:
 	_hp_label = _make_label(Vector2(16, 10), 400)
 	_add_control(_hp_label)
 
-	# Main status text (top-left, below health).
+	# Main status/debug text (top-left, below health). Small, and toggled with [`].
 	_status = _make_label(Vector2(12, 34), 620)
+	_status.add_theme_font_size_override("font_size", 11)
 	_add_control(_status)
 
 	# Interaction prompt (bottom-center).
@@ -289,8 +397,6 @@ func _build_ui() -> void:
 	add_child(_factory)
 
 	# Real-time scrapping minigame overlay (opened by interacting with a scrap node).
-	_scrap_minigame = ScrapMinigame.new()
-	add_child(_scrap_minigame)
 
 	# Retrieval-cartridge loader (opened from the retrieval pad once shipping is on).
 	_cartridge = CartridgePanel.new()
@@ -299,6 +405,22 @@ func _build_ui() -> void:
 	# Module decode draft (opened from a decode station).
 	_decode = DecodePanel.new()
 	add_child(_decode)
+
+	# Component exchange (opened from the start-room Component Exchange station).
+	_exchange = ExchangePanel.new()
+	add_child(_exchange)
+
+	# Fabricator crafting menu (opened from a Fabricator station).
+	_fabricator = FabricatorPanel.new()
+	add_child(_fabricator)
+
+	# "Machine found" card (shown when you pick a machine up in a room).
+	_found = FoundMachinePanel.new()
+	add_child(_found)
+
+	# Debug run-info panel ([P]).
+	_run_info = RunInfoPanel.new()
+	add_child(_run_info)
 
 	# Run-start ability chooser (modal), opened from setup().
 	_ability_choice = AbilityChoicePanel.new()

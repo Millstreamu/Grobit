@@ -138,14 +138,18 @@ questions for how they reconcile.)*
   and **pick 1 of 3 modules** drawn from your unlocked pool. This is the deliberate
   RNG that keeps runs varied; pool growth is what tilts the odds over time.
   Decoded modules join your **persistent collection** (kept across runs).
-- **Reshuffle (machine upgrades).** Since upgrade slots are **RNG-shaped**, you get
-  a **reshuffle** to re-roll a machine's newly-added slot layout when upgrading it
-  (so a bad L-shape isn't a dead end). Starts at **once per game** and **increases
-  with progress**.
+- **Reshuffle (RNG layouts).** Machine layouts are **RNG-shaped** in two places now:
+  the **build-time port roll** (in/out cells placed randomly around the core when a
+  machine is first built) and the **level-up slot roll**. A **reshuffle** re-rolls the
+  current pending layout so a bad shape isn't a dead end. **Decision (2026-09-26):**
+  the per-run reshuffle budget **defaults to 0** — you live with what you roll — and
+  **only meta progression grants more** (the `reshuffles` meta effect). Both the build
+  and level-up flows draw from this one shared `RunState.reshuffles` budget.
 
 ### Placeholders (tunable)
 - Decode: **pick 1 of 3**.
-- Reshuffle: **starts at 1**, grows with progress.
+- Reshuffle: **defaults to 0 per run**; meta progression (the `reshuffles` effect)
+  grants more.
 
 ### Resolved decisions (meta, 2026-09-19)
 1. **Decoded modules persist across runs.** You keep a **permanent collection** of
@@ -198,6 +202,12 @@ questions for how they reconcile.)*
   "Scrapping minigame".
 - Detailed **weapon-machine + ammo** mechanics.
 - Detailed **logic-machine** behaviors.
+- **Grant the `reshuffles` meta effect somewhere.** Reshuffles now default to 0 and
+  come only from `MetaState.effect_total("reshuffles", …)`, but **nothing currently
+  grants it**, so the count stays 0 forever. Later: add a module/tech/unlock that
+  provides the `reshuffles` effect (and decide the growth curve — see meta open
+  question 7). Wiring: `RunState.begin_run()` reads the effect; the build/level UI in
+  `factory_panel.gd` already spends and displays `RunState.reshuffles`.
 
 ## Scrapping minigame (node harvesting)
 

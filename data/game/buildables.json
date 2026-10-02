@@ -5,8 +5,15 @@
       "name": "Respawn Beacon",
       "icon": "respawn_beacon",
       "color": "3ad6a2",
-      "cost": { "scrap_metal": 2 },
+      "cost": { "junk": 2 },
       "uses": 2
+    },
+    "power_relay": {
+      "name": "Power Relay",
+      "icon": "power_relay",
+      "color": "ffd24a",
+      "_comment": "Lights up the room it's built in. Free for now (tuning later).",
+      "cost": {}
     }
   }
 }

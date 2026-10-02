@@ -1,6 +1,27 @@
 {
   "_comment": "Salvage economy (see docs Machines/Scrapables/Resources reference). JUNK is harvested from nodes via the scrapping minigame; MATERIALS come from processing junk in grid machines; PROCESSED/COMPONENTS are deeper craft outputs and ship targets. Keep raw types small; complexity comes from processing.",
   "resources": {
+    "junk": { "name": "Junk", "icon": "junk", "color": "8a7f6d" },
+    "copper": { "name": "Copper", "icon": "copper", "color": "c8722e" },
+    "steel": { "name": "Steel", "icon": "steel", "color": "b9c2cc" },
+    "plastic": { "name": "Plastic", "icon": "plastic", "color": "3fb6a8" },
+    "ceramic": { "name": "Ceramic", "icon": "ceramic", "color": "e0d7c0" },
+
+    "copper_scrap": { "name": "Copper Scrap", "icon": "scrap_copper", "color": "b0632a" },
+    "steel_scrap": { "name": "Steel Scrap", "icon": "scrap_steel", "color": "8f98a3" },
+    "plastic_scrap": { "name": "Plastic Scrap", "icon": "scrap_plastic", "color": "359186" },
+    "ceramic_scrap": { "name": "Ceramic Scrap", "icon": "scrap_ceramic", "color": "c4bba2" },
+
+    "charge_cells": { "name": "Charge Cells", "icon": "charge_cells", "color": "e8a13a", "stack": 16 },
+    "steel_slugs": { "name": "Steel Slugs", "icon": "steel_slugs", "color": "cfd6dd", "stack": 16 },
+    "resin_capsules": { "name": "Resin Capsules", "icon": "resin_capsules", "color": "56d3c4", "stack": 16 },
+    "ceramic_charges": { "name": "Ceramic Charges", "icon": "ceramic_charges", "color": "efe6cf", "stack": 16 },
+
+    "power_coupling": { "name": "Power Coupling", "icon": "power_coupling", "color": "d98f3a", "stack": 8 },
+    "control_assembly": { "name": "Control Assembly", "icon": "control_assembly", "color": "7fc8a0", "stack": 8 },
+    "reinforced_frame": { "name": "Reinforced Frame", "icon": "reinforced_frame", "color": "9aa6b2", "stack": 8 },
+    "thermal_core": { "name": "Thermal Core", "icon": "thermal_core", "color": "e06a6a", "stack": 8 },
+
     "bent_panel": { "name": "Bent Panel", "icon": "bent_panel", "color": "8a7f6d" },
     "cable_bundle": { "name": "Cable Bundle", "icon": "cable_bundle", "color": "b5453a" },
     "burnt_board": { "name": "Burnt Circuit Board", "icon": "burnt_board", "color": "3f6f4a" },

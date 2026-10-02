@@ -12,6 +12,7 @@ extends Node2D
 
 var _aim: Selector
 var _interact: Selector
+var _held: Node2D  # the scrap pile currently being hold-harvested (if any)
 
 
 func _ready() -> void:
@@ -26,15 +27,29 @@ func _ready() -> void:
 	_interact.clear()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_aim()
 	_update_interactable()
 	# Central interaction: F acts on the single nearest in-range interactable, so
-	# overlapping interactables never all fire at once.
-	if Input.is_action_just_pressed("interact"):
-		var target := _nearest_interactable()
-		if target != null and target.has_method("interact"):
+	# overlapping interactables never all fire at once. Interactables that define
+	# `hold_interact` (scrap piles) are driven continuously while F is held; the rest
+	# fire once on press.
+	var target := _nearest_interactable()
+	if target != null and target.has_method("hold_interact") and Input.is_action_pressed("interact"):
+		if _held != target:
+			_release_held()
+			_held = target
+		target.hold_interact(delta)
+	else:
+		_release_held()
+		if Input.is_action_just_pressed("interact") and target != null and target.has_method("interact"):
 			target.interact()
+
+
+func _release_held() -> void:
+	if _held != null and is_instance_valid(_held) and _held.has_method("hold_release"):
+		_held.hold_release()
+	_held = null
 
 
 func _update_aim() -> void:
@@ -62,12 +77,17 @@ func _nearest_interactable() -> Node2D:
 	if player == null:
 		return null
 	var best: Node2D
+	var best_priority := -INF
 	var best_distance := INF
 	for node: Node in get_tree().get_nodes_in_group("interactables"):
 		if not node is Node2D or not node.has_method("can_interact") or not node.can_interact():
 			continue
+		# Higher priority wins outright; doors sit low so a pickup on a doorway is
+		# still grabbable (otherwise the door hogs the selection and traps the item).
+		var priority := int(node.interact_priority()) if node.has_method("interact_priority") else 0
 		var distance := player.global_position.distance_to((node as Node2D).global_position)
-		if distance < best_distance:
+		if priority > best_priority or (priority == best_priority and distance < best_distance):
+			best_priority = priority
 			best_distance = distance
 			best = node
 	return best

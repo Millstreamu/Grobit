@@ -1,0 +1,4 @@
+[gd_scene load_steps=2 format=3 uid="uid://b7cellstacktest1"]
+[ext_resource type="Script" path="res://scripts/world/cell_stack_test.gd" id="1"]
+[node name="CellStackTest" type="Node"]
+script = ExtResource("1")

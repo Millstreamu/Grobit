@@ -15,6 +15,7 @@ var run_seed := 0
 var player: GrobitPlayer
 var generator: AreaGenerator
 var build_manager: BuildManager
+var lighting: LightingSystem
 var hud: Hud
 var _run_over := false
 
@@ -49,24 +50,40 @@ func _ready() -> void:
 	build_manager.name = "BuildManager"
 	add_child(build_manager)
 
+	# Darkness + vision (see LightingSystem). Created before the player so the cone
+	# can be attached as soon as Grobit exists.
+	lighting = LightingSystem.new()
+	lighting.name = "Lighting"
+	add_child(lighting)
+
 	_spawn_objective()
 
 	player = PLAYER_SCENE.instantiate() as GrobitPlayer
 	player.global_position = start_position
 	add_child(player)
 	player.died.connect(_on_player_died)
+	lighting.attach_player(player)
+	# The start room is a lit safe room.
+	lighting.add_lamp(start_position, 150.0)
 
-	# Retrieval pad in the (safe) start room — where you ship out once the objective
-	# is done. Slice: pre-placed; later a buildable in any cleared room.
+	# Start-room stations snap onto floor-tile centers (distinct tiles) so they line up
+	# with the grid instead of sitting at arbitrary pixel offsets.
+	var tile := 32.0
+	var taken: Array = []
+
+	# Retrieval pad — where you ship out once the objective is done.
 	var pad := RetrievalPad.new()
 	add_child(pad)
-	pad.global_position = start_position + Vector2(0, 44)
+	pad.global_position = generator.snap_to_tile(start_position + Vector2(tile, tile), null, taken)
+	taken.append(pad.global_position)
+	lighting.add_lamp(pad.global_position, 96.0, 1.0, Color(0.7, 0.9, 1.0))
 
-	# Decode station in the start room so drafting modules is reachable (slice; later
-	# these live in workshop rooms).
-	var decode := DecodeStation.new()
-	add_child(decode)
-	decode.global_position = start_position + Vector2(-44, 44)
+	# Component Exchange — sell finished components for credit toward a random machine.
+	var exchange := ComponentExchange.new()
+	add_child(exchange)
+	exchange.global_position = generator.snap_to_tile(start_position + Vector2(-tile, tile), null, taken)
+	taken.append(exchange.global_position)
+	lighting.add_lamp(exchange.global_position, 96.0, 1.0, Color(1.0, 0.9, 0.6))
 
 	var selection := SelectionManager.new()
 	selection.name = "SelectionManager"
@@ -85,9 +102,9 @@ func _ready() -> void:
 	# Env-gated: unlock shipping + seed factory items + open the cartridge loader.
 	if OS.has_environment("GROBIT_OPEN_SHIP") and RunState.factory != null:
 		RunState.unlock_shipping()
-		RunState.factory.set_cell(Vector2i(2, 0), {"kind": "resource", "id": "metal_bar"})
-		RunState.factory.set_cell(Vector2i(3, 0), {"kind": "resource", "id": "scrap_metal"})
-		RunState.factory.set_cell(Vector2i(2, 1), {"kind": "resource", "id": "copper_wire"})
+		RunState.factory.set_cell(Vector2i(2, 0), {"kind": "resource", "id": "copper"})
+		RunState.factory.set_cell(Vector2i(3, 0), {"kind": "resource", "id": "charge_cells"})
+		RunState.factory.set_cell(Vector2i(2, 1), {"kind": "resource", "id": "power_coupling"})
 		hud.open_cartridge.call_deferred()
 
 	# Report which artwork is still using placeholders (all icons now requested).
@@ -112,24 +129,15 @@ func _debug_spawn_loot() -> void:
 	node.generate({
 		"label": "salvage", "tokens_min": 6, "tokens_max": 8,
 		"rust_chance": 0.5, "rust_min": 1, "rust_max": 2, "loose_chance": 0.5,
-		"pool": [
-			{"id": "bent_panel", "weight": 5},
-			{"id": "cable_bundle", "weight": 3},
-			{"id": "broken_motor", "weight": 2},
-			{"id": "burnt_board", "weight": 2},
-		],
+		"pool": [{"id": "junk", "weight": 1}],
 	})
 	add_child(node)
-	node.global_position = player.global_position + Vector2(44, 0)
+	node.global_position = generator.snap_to_tile(player.global_position + Vector2(32, 0))
 	var station := RepairStation.new()
-	station.cost = {"scrap_metal": 2}
+	station.cost = {"junk": 2}
 	station.reward = "ability"
 	add_child(station)
-	station.global_position = player.global_position + Vector2(-44, 0)
-
-	# Env-gated: open the scrapping minigame on the spawned node for inspection.
-	if OS.has_environment("GROBIT_OPEN_SCRAP") and hud != null:
-		hud.open_scrap_minigame.call_deferred(node)
+	station.global_position = generator.snap_to_tile(player.global_position + Vector2(-32, 0), null, [node.global_position])
 
 
 func _spawn_objective() -> void:
@@ -138,7 +146,9 @@ func _spawn_objective() -> void:
 	# Slice: a simple objective terminal that unlocks shipping when activated.
 	var terminal := ObjectiveTerminal.new()
 	add_child(terminal)
-	terminal.global_position = generator.objective_room.center()
+	terminal.global_position = generator.snap_to_tile(generator.objective_room.center(), generator.objective_room)
+	if lighting != null:
+		lighting.add_lamp(terminal.global_position, 120.0, 1.1, Color(1.0, 0.8, 0.6))
 
 
 ## Ends the run, banking the loaded cartridge toward the permanent Mars total.

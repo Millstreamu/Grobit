@@ -43,6 +43,11 @@
   .stats{color:var(--muted);font-size:12px;margin-top:8px}
   textarea{width:100%;min-height:340px;background:#0c0d13;color:#cfe3f0;border:1px solid var(--line);border-radius:8px;padding:12px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
   .hint{color:var(--muted);font-size:12px;margin:6px 0 12px}
+  .itembox{display:flex;flex-direction:column;gap:5px}
+  .itemrow{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)}
+  .itemrow label{display:flex;align-items:center;gap:7px;flex:1;cursor:pointer;margin:0}
+  .itemrow input[type=number]{width:56px}
+  .itemrow input[type=number]:disabled{opacity:.35}
   .export{margin-top:14px}
   .export textarea{min-height:120px}
   code{background:var(--panel2);padding:1px 5px;border-radius:4px}
@@ -138,12 +143,13 @@
       <h2>Harvest (scrap nodes)</h2>
       <div class="hint">Most rooms scatter these — the main resource income.</div>
       <div class="ctrl"><label>Nodes per room (min / max)</label><div class="row"><input type="number" id="g-h-min" value="1" min="0"><input type="number" id="g-h-max" value="3" min="0"></div></div>
-      <div class="ctrl"><label>Charges per node</label><input type="number" id="g-h-charges" value="3" min="1"></div>
-      <div class="hint">Yield table (JSON array)</div>
-      <textarea id="g-harvest-yield" style="min-height:120px">[
-  { "resource": "raw_scrap", "min": 1, "max": 2, "chance": 1.0 },
-  { "resource": "metal", "min": 1, "max": 1, "chance": 0.2 }
-]</textarea>
+      <div class="ctrl"><label>Charges per node (min / max)</label><div class="row"><input type="number" id="g-h-tokmin" value="3" min="1"><input type="number" id="g-h-tokmax" value="8" min="1"></div></div>
+      <div class="ctrl"><label>Rust — chance / hits min / hits max</label><div class="row"><input type="number" id="g-h-rustchance" value="0.4" min="0" max="1" step="0.05"><input type="number" id="g-h-rustmin" value="1" min="1"><input type="number" id="g-h-rustmax" value="3" min="1"></div></div>
+      <div class="ctrl"><label>Loose chance (slots reshuffle)</label><input type="number" id="g-h-loose" value="0" min="0" max="1" step="0.05"></div>
+      <div class="ctrl"><label>Items that can be found (tick + weight)</label>
+        <div id="g-h-items" class="itembox"></div>
+        <div class="hint">Ticked items form the node's weighted pool. Higher weight = more common.</div>
+      </div>
     </div>
 
     <div class="panel">
@@ -257,6 +263,37 @@ const ctl={seed:"seed",gw:"gw",gh:"gh",cs:"cs",rc:"rc",rmin:"rmin",rmax:"rmax",l
 const RTW=["combat","salvage","hazard","spawner","workshop"];
 const EW=["basic_enemy","swarmer","brute","shooter"];
 const TYPE_COLORS={start:"#6699ff",objective:"#f2cc4d",combat:"#8c8c99",salvage:"#4dcccc",hazard:"#e6804d",spawner:"#b366e6",workshop:"#d9d98c"};
+
+// ---------- scrap-node item pool (tickable) ----------
+// Junk items a scrap node can drop (must match ids in data/game/resources.json).
+// {on} = ticked by default, {w} = weight. Extend this list to add more options.
+const HARVEST_ITEMS=[
+  {id:"bent_panel",   name:"Bent Panel",       on:true,  w:5},
+  {id:"cable_bundle", name:"Cable Bundle",     on:true,  w:3},
+  {id:"broken_motor", name:"Broken Motor",     on:true,  w:2},
+  {id:"burnt_board",  name:"Burnt Board",      on:true,  w:2},
+  {id:"mixed_components", name:"Mixed Components", on:false, w:1},
+];
+function renderHarvestItems(){
+  const box=document.getElementById("g-h-items");
+  box.innerHTML="";
+  for(const it of HARVEST_ITEMS){
+    const row=document.createElement("div"); row.className="itemrow";
+    row.innerHTML=`<label><input type="checkbox" class="h-item-on" data-id="${it.id}" ${it.on?"checked":""}> ${it.name}</label>`+
+      `<span style="color:var(--muted);font-size:11px">weight</span>`+
+      `<input type="number" class="h-item-w" data-id="${it.id}" value="${it.w}" min="1" ${it.on?"":"disabled"}>`;
+    box.appendChild(row);
+  }
+}
+function harvestPool(){
+  const pool=[];
+  document.querySelectorAll("#g-h-items .h-item-on").forEach(cb=>{
+    const w=document.querySelector('#g-h-items .h-item-w[data-id="'+cb.dataset.id+'"]');
+    if(w) w.disabled=!cb.checked;
+    if(cb.checked) pool.push({id:cb.dataset.id, weight:parseInt(w?w.value:1,10)||1});
+  });
+  return pool;
+}
 
 function readControls(){
   for(const k in ctl){const el=document.getElementById(ctl[k]); P[k]=parseInt(el.value,10)||0;}
@@ -431,7 +468,10 @@ function exportJSON(){
     grid_width:P.gw,grid_height:P.gh,cell_size:P.cs,room_count:P.rc,
     room_min_cells:P.rmin,room_max_cells:P.rmax,loop_chance:P.loop/100,door_width:P.dw,
     room_type_weights:{...P.rtw},enemy_weights:{...P.ew},min_enemies:P.emin,max_enemies:P.emax,
-    harvest:{per_room_min:gnum("g-h-min",1),per_room_max:gnum("g-h-max",3),charges:gnum("g-h-charges",3),yield:gjson("g-harvest-yield",[])},
+    harvest:{per_room_min:gnum("g-h-min",1),per_room_max:gnum("g-h-max",3),
+      tokens_min:gnum("g-h-tokmin",3),tokens_max:gnum("g-h-tokmax",8),
+      rust_chance:gnum("g-h-rustchance",0.4),rust_min:gnum("g-h-rustmin",1),rust_max:gnum("g-h-rustmax",3),
+      loose_chance:gnum("g-h-loose",0),pool:harvestPool()},
     spawner:{markers:gnum("g-sp-markers",1),base_count:gnum("g-sp-base",3),count_growth:gnum("g-sp-growth",2),base_health:gnum("g-sp-hp",3),base_speed:gnum("g-sp-spd",55),health_per_wave:gnum("g-sp-hpw",1),speed_per_wave:gnum("g-sp-spw",0.05)},
     repair:{cost:{metal:gnum("g-rp-metal",2)},rewards:repairRewards()},
     salvage_loot:gjson("g-salvage",[]),
@@ -458,7 +498,9 @@ document.getElementById("download").onclick=()=>download("generation.json",expor
 document.getElementById("copy").onclick=()=>navigator.clipboard&&navigator.clipboard.writeText(exportJSON());
 document.getElementById("download2").onclick=()=>download("generation.json",exportJSON());
 document.getElementById("copy2").onclick=()=>navigator.clipboard&&navigator.clipboard.writeText(exportJSON());
-// keep the exported JSON in sync when gameplay fields change
+// scrap-node item pickers: render, then keep the exported JSON in sync on any change
+renderHarvestItems();
+document.getElementById("g-h-items").addEventListener("input",updateExport);
 document.querySelectorAll("#view-gameplay input, #view-gameplay textarea").forEach(el=>el.addEventListener("input",updateExport));
 
 // data-editor tabs

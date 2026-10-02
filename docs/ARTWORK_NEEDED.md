@@ -14,7 +14,28 @@ Salvage economy (see docs/MACHINES_SCRAPABLES_RESOURCES.md). Everything renders 
 coloured placeholder until a matching sprite id is added.
 
 **Grid machines (28×28):** `scrapper_arm`, `scrap_recycler`, `grinder`, `separator`,
-`smelter`, `press`, `refiner`, `circuit_printer`, `constructor`, `assembler`.
+`smelter`, `press`, `refiner`, `circuit_printer`, `constructor`, `assembler`,
+`storage_cache` (stacks 16 of one item; ships the whole stack in one cartridge slot).
+
+**NEW 4-material economy (16×16):** `junk` (generic salvage), `copper`, `steel`, `plastic`, `ceramic`.
+
+**NEW typed scrap (16×16):** `scrap_copper`, `scrap_steel`, `scrap_plastic`, `scrap_ceramic` — the harvested scrap each recycler eats (from the matching scrap pile). Tint toward the parent material. Also used in the Scrapper Arm bar (top of the inventory) and on Scrap Insert points.
+
+**NEW Scrap Insert point (optional frame, ~36×36):** `scrap_insert` — a 2-tall source machine built with [B]; the top tile is the emitter (currently drawn as the scrap icon + a ▼). A dedicated frame/housing sprite would read better than the bare scrap icon.
+
+**NEW typed scrap piles (world nodes, ~26×26):** `scrap_copper`, `scrap_steel`, `scrap_plastic`, `scrap_ceramic` are reused as pile sprites too — a scrap heap coloured for its material. (The old generic `scrap_node` sprite is still used for debug loot.)
+
+**NEW recycler icons (28×28):** `recycler_copper`, `recycler_steel`, `recycler_plastic`, `recycler_ceramic` (a broken Recycler repairs into one of these).
+
+**NEW ammo (16×16):** `charge_cells`, `steel_slugs`, `resin_capsules`, `ceramic_charges` (one per family).
+
+**NEW ammo-maker icons (28×28):** `ammo_maker_copper`, `ammo_maker_steel`, `ammo_maker_plastic`, `ammo_maker_ceramic`.
+
+**NEW weapon icons (28×28):** `weapon_copper`, `weapon_steel`, `weapon_plastic`, `weapon_ceramic` — repairable weapons found broken in rooms; each is placed in the inventory with an ammo input slot and eats its family's ammo (copper→charge_cells, steel→steel_slugs, plastic→resin_capsules, ceramic→ceramic_charges).
+
+**NEW components (16×16):** `power_coupling`, `control_assembly`, `reinforced_frame`, `thermal_core`.
+
+**NEW component-maker icons (28×28):** `comp_maker_coupling`, `comp_maker_control`, `comp_maker_frame`, `comp_maker_thermal`.
 
 **Junk items (16×16, harvested):** `bent_panel`, `cable_bundle`, `burnt_board`,
 `broken_motor`.
@@ -29,7 +50,7 @@ coloured placeholder until a matching sprite id is added.
 
 **World stations / nodes (30×30 / ~20×20):** `scrap_node`, `e_waste_node`,
 `repair_station`, `objective_terminal`, `retrieval_pad`, `decode_station`,
-`respawn_beacon`.
+`respawn_beacon`, `power_relay` (buildable that lights up its room), `fabricator` (in-room workbench that crafts transport/caches), `component_exchange` (start-room station: sell components for credit toward a random machine).
 
 **Enemies / hazards:** `enemy_swarmer` (12×12), `enemy_brute` (26×26),
 `enemy_shooter` (18×18), `enemy_shot` (8×8), `wall_spawner` (32×32),
@@ -42,6 +63,9 @@ panels draw flat rectangles, so they're optional, not blocking.
 
 | Sprite id (must match) | Suggested size | Used for |
 | --- | --- | --- |
+| `rust` | ~40×40 | Scrapping minigame: rust marker shown over a rusted 2×2 slot (a corner badge overlays the charges-to-expose number). Currently an orange placeholder |
+| `filter` | 28×28 | Filter conveyor buildable icon (routes one item type out the 90° side). Currently a coloured placeholder; the cell also draws its arrows + filtered-item icon in code |
+| `machine_crate` | 24×24 | The generic "unknown machine" crate shown for EVERY machine pickup found in a room — you only learn which machine it is from the F prompt. Currently a grey placeholder |
 | `ui_slot` | 54×54 | Empty inventory / recipe cell background |
 | `ui_slot_module` | 54×54 | Recycler / module slot background (distinct from a normal cell) |
 | `ui_panel_bg` | ~560×400 | Full-window panel background (inventory & manufacturing) |

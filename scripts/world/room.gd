@@ -45,10 +45,11 @@ var _pending_players: Array[Node2D] = []
 const ACTIVATION_INSET := 12.0
 
 
-# Rooms that trap the player and require clearing before doors reopen. Spawner
-# rooms also lock during a wave, but re-arm on re-entry instead of clearing once.
+# Exploration-first: rooms no longer seal the player in to clear a wave. Combat is
+# now sparse ambient threats, so nothing locks doors on entry. (The lock/activate/
+# wave code below is kept, unused, for a future objective-gate if we want one.)
 func _locks_on_entry() -> bool:
-	return room_type == RoomType.COMBAT or room_type == RoomType.OBJECTIVE or room_type == RoomType.HAZARD
+	return false
 
 
 func build_trigger() -> void:
@@ -75,6 +76,26 @@ func center() -> Vector2:
 	for t: Vector2 in interior_tiles:
 		sum += t
 	return sum / interior_tiles.size()
+
+
+## The interior floor-tile CENTER nearest `world_pos` — use this to place stations so they
+## sit snapped on the grid rather than at an arbitrary pixel offset. `exclude` skips tiles
+## already taken (so several stations land on distinct tiles).
+func nearest_interior_tile(world_pos: Vector2, exclude: Array = []) -> Vector2:
+	if interior_tiles.is_empty():
+		return world_pos
+	var best := world_pos
+	var best_dist := INF
+	var found := false
+	for t: Vector2 in interior_tiles:
+		if exclude.has(t):
+			continue
+		var d := t.distance_squared_to(world_pos)
+		if d < best_dist:
+			best_dist = d
+			best = t
+			found = true
+	return best if found else interior_tiles[0]
 
 
 func _physics_process(_delta: float) -> void:
@@ -107,26 +128,21 @@ func _on_body_entered(body: Node) -> void:
 
 
 func _enter_room() -> void:
-	# Spawner rooms lock and spawn a fresh wave each time you enter (armed), then
-	# unlock once the wave is cleared; leaving re-arms them for a bigger next wave.
-	if room_type == RoomType.SPAWNER:
-		if _armed and not _active:
-			_start_wave()
+	# No sealing/waves. Combat & spawner rooms scatter a few ambient enemies the FIRST
+	# time you enter (sparse, avoidable); everything else is exploration/production.
+	if _active or is_cleared:
 		return
-	if not _locks_on_entry():  # start and salvage rooms never lock
-		return
-	if is_cleared or _active:
-		return
-	activate()
+	if room_type == RoomType.COMBAT or room_type == RoomType.SPAWNER:
+		_active = true
+		var count := rng.randi_range(enemy_min, enemy_max)
+		for i in count:
+			_spawn_enemy(_random_interior_point(), _pick_enemy())
 
 
 func _on_body_exited(body: Node) -> void:
 	if not body.is_in_group("player"):
 		return
 	_pending_players.erase(body)
-	# Re-arm a spawner room once the player leaves a cleared wave.
-	if room_type == RoomType.SPAWNER and not _active:
-		_armed = true
 
 
 ## Spawns the salvage room's guaranteed loot. Called once after the room is built.

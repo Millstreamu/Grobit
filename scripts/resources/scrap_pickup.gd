@@ -3,7 +3,7 @@ extends Area2D
 ## A dropped resource on the floor. NOT auto-collected — stand near it and press F
 ## to pick it up (obeys inventory space). Non-solid, so Grobit can walk over it.
 
-@export var resource_id := "scrap_metal"
+@export var resource_id := "junk"
 @export var amount := 1
 
 var _in_range := false
@@ -41,7 +41,9 @@ func interaction_prompt() -> String:
 
 
 func interact() -> void:
-	if not RunState.has_space():
+	# Scrap/Tech Data are top-bar currencies (uncapped) — always collectable. Grid items
+	# still need a free cell.
+	if resource_id not in RunState.BAR_CURRENCIES and not RunState.has_space():
 		for hud: Node in get_tree().get_nodes_in_group("hud"):
 			if hud.has_method("log_message"):
 				hud.log_message("Inventory full.")

@@ -210,5 +210,9 @@ func _instantiate_buildable(id: String) -> Node2D:
 			beacon.buildable_id = id
 			beacon.uses = int(GameData.buildables.get(id, {}).get("uses", 2))
 			return beacon
+		"power_relay":
+			var relay := PowerRelay.new()
+			relay.buildable_id = id
+			return relay
 	push_error("BuildManager has no buildable named '%s'." % id)
 	return null

@@ -5,10 +5,11 @@
       "name": "Scrapper Arm",
       "icon": "scrapper_arm",
       "color": "c9a24a",
+      "cost": {},
       "inputs": [],
       "outputs": [[1, 0]],
-      "holding": [[1, 0], [0, 1], [1, 1]],
-      "_note": "Pre-placed; harvested junk lands in its holding cells. Not player-placeable."
+      "holding": [[0, 1], [1, 1], [2, 0]],
+      "_note": "Free buildable. Harvested junk lands in the holding cells; when the output is clear one trickles out (built-in conveyor). These are the default offsets (pre-placed arm); a built arm rolls holding + output onto the 4 sides."
     },
     "scrap_recycler": {
       "name": "Scrap Recycler",
@@ -18,13 +19,35 @@
       "outputs": [[1, 0], [1, 1]],
       "cost": { "scrap_metal": 2 }
     },
+
+    "copper_recycler": { "name": "Copper Recycler", "icon": "recycler_copper", "color": "c8722e", "inputs": [[-1, 0]], "outputs": [[1, 0]], "_note": "Broken Recyclers repair-roll into one of the 4 material recyclers (machine_finds). Data-driven; multi-material/upgradeable = more defs later." },
+    "steel_recycler": { "name": "Steel Recycler", "icon": "recycler_steel", "color": "b9c2cc", "inputs": [[-1, 0]], "outputs": [[1, 0]] },
+    "plastic_recycler": { "name": "Plastic Recycler", "icon": "recycler_plastic", "color": "3fb6a8", "inputs": [[-1, 0]], "outputs": [[1, 0]] },
+    "ceramic_recycler": { "name": "Ceramic Recycler", "icon": "recycler_ceramic", "color": "e0d7c0", "inputs": [[-1, 0]], "outputs": [[1, 0]] },
+
+    "copper_ammo_maker": { "name": "Copper Ammo Maker", "icon": "ammo_maker_copper", "color": "e8a13a", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]], "_note": "Broken Ammo Makers repair-roll into one of these 4 (one per family). Recipes are data-driven and level-gated (see recipes.json 'level')." },
+    "steel_ammo_maker": { "name": "Steel Ammo Maker", "icon": "ammo_maker_steel", "color": "cfd6dd", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
+    "plastic_ammo_maker": { "name": "Plastic Ammo Maker", "icon": "ammo_maker_plastic", "color": "56d3c4", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
+    "ceramic_ammo_maker": { "name": "Ceramic Ammo Maker", "icon": "ammo_maker_ceramic", "color": "efe6cf", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
+
+    "coupling_maker": { "name": "Coupling Maker", "icon": "comp_maker_coupling", "color": "d98f3a", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]], "_note": "Broken Component Makers repair-roll into one of these. Each combines two base materials into a component (machine type decides the output, not a universal table)." },
+    "control_maker": { "name": "Control Maker", "icon": "comp_maker_control", "color": "7fc8a0", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
+    "frame_maker": { "name": "Frame Maker", "icon": "comp_maker_frame", "color": "9aa6b2", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
+    "thermal_maker": { "name": "Thermal Maker", "icon": "comp_maker_thermal", "color": "e06a6a", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
+
+    "copper_weapon":  { "name": "Copper Blaster",  "icon": "weapon_copper",  "color": "c8722e", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "copper",  "ammo": "charge_cells",    "damage": 2, "cooldown": 0.25, "projectile_speed": 460, "cost": {"junk": 3}, "_note": "Found broken; repairs into a family weapon. Feed its ammo into the input slot; combat draws from there (see PlayerCombat / FactoryGrid.try_fire_weapon)." },
+    "steel_weapon":   { "name": "Steel Cannon",    "icon": "weapon_steel",   "color": "b9c2cc", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "steel",   "ammo": "steel_slugs",     "damage": 6, "cooldown": 0.70, "projectile_speed": 360, "cost": {"junk": 3} },
+    "plastic_weapon": { "name": "Resin Repeater",  "icon": "weapon_plastic", "color": "3fb6a8", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "plastic", "ammo": "resin_capsules",  "damage": 2, "cooldown": 0.45, "projectile_speed": 410, "pellets": 3, "spread_deg": 22, "cost": {"junk": 3}, "_note": "Spread: one trigger-pull fires 3 pellets in a fan (spread_deg)." },
+    "ceramic_weapon": { "name": "Ceramic Lance",   "icon": "weapon_ceramic", "color": "e0d7c0", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "ceramic", "ammo": "ceramic_charges", "damage": 4, "cooldown": 0.52, "projectile_speed": 420, "pierce": 2, "cost": {"junk": 3}, "_note": "Pierce: the shot passes through up to 2 enemies (hits 3 in a line)." },
+
+
     "grinder": {
       "name": "Grinder",
       "icon": "grinder",
       "color": "7a6f5d",
       "inputs": [[-1, 0]],
       "outputs": [[1, 0]],
-      "cost": { "scrap_metal": 3 }
+      "cost": { "junk": 3 }
     },
     "separator": {
       "name": "Separator",
@@ -40,7 +63,7 @@
       "color": "c86b3a",
       "inputs": [[-1, 0]],
       "outputs": [[1, 0]],
-      "cost": { "scrap_metal": 3 }
+      "cost": { "junk": 3 }
     },
     "press": {
       "name": "Press",
@@ -48,7 +71,7 @@
       "color": "8a8f97",
       "inputs": [[-1, 0]],
       "outputs": [[1, 0]],
-      "cost": { "scrap_metal": 3 }
+      "cost": { "junk": 3 }
     },
     "refiner": {
       "name": "Refiner",
@@ -56,7 +79,7 @@
       "color": "e08a3a",
       "inputs": [[-1, 0]],
       "outputs": [[1, 0]],
-      "cost": { "scrap_metal": 3 }
+      "cost": { "junk": 3 }
     },
     "circuit_printer": {
       "name": "Circuit Printer",
@@ -85,6 +108,16 @@
       "cost": { "metal_plate": 2 },
       "locked": true,
       "unlock_requires": { "control_unit": 2 }
+    },
+    "storage_cache": {
+      "name": "Storage Cache",
+      "icon": "storage_cache",
+      "color": "6f9bd1",
+      "inputs": [[-1, 0]],
+      "outputs": [],
+      "capacity": 16,
+      "cost": { "junk": 3 },
+      "_note": "A sink: items fed into its input stack up to `capacity` of ONE type. Load a full cache at the retrieval pad to ship the whole stack in one cartridge slot."
     }
   }
 }

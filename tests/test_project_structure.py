@@ -114,7 +114,6 @@ class ProjectStructureTests(unittest.TestCase):
             "scripts/ui/minimap.gd",
             "scripts/ui/build_palette.gd",
             "scripts/ui/factory_panel.gd",
-            "scripts/ui/scrap_minigame.gd",
             "scripts/ui/cartridge_panel.gd",
             "scripts/ui/decode_panel.gd",
             "scripts/ui/ability_choice_panel.gd",

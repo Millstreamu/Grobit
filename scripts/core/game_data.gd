@@ -17,6 +17,7 @@ var machines: Dictionary = {}
 var modules: Dictionary = {}
 var generation: Dictionary = {}
 var areas: Dictionary = {}
+var families: Dictionary = {}  # material family -> {name, letter, ammo, ammo_maker}
 
 
 func _ready() -> void:
@@ -32,6 +33,7 @@ func _ready() -> void:
 	# Map-shape parameters authored in the Config Studio tool (optional file).
 	generation = _load("generation.json").get("generation", {})
 	areas = _load("area.json").get("areas", {})
+	families = _load("families.json").get("families", {})
 
 
 func resource_name(id: String) -> String:
@@ -44,6 +46,12 @@ func resource_icon(id: String) -> String:
 
 func resource_color(id: String) -> String:
 	return String(resources.get(id, {}).get("color", ""))
+
+
+## How many of this resource fit in one inventory cell (1 = no stacking). Ammo stacks to
+## 16, tier-1 components to 8, tier-2 components to 4 (set per resource in resources.json).
+func stack_max(id: String) -> int:
+	return maxi(1, int(resources.get(id, {}).get("stack", 1)))
 
 
 ## Recipes that run on a given machine id (in list order — first satisfied wins).

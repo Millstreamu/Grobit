@@ -30,6 +30,8 @@ var _doorways: Array = []           # [room a, room b, door tile] per shared doo
 var _floors: Node2D
 var _wall_sprites: Node2D
 var _walls: StaticBody2D
+var _occluders: Node2D
+var _wall_occluder: OccluderPolygon2D  # shared unit-square, reused by every wall
 var _doors_root: Node2D
 var _floor_tile := "floor_clean"
 var _wall_tile := "wall"
@@ -38,6 +40,7 @@ var _harvest_config: Dictionary = {}
 var _repair_config: Dictionary = {}
 var _spawner_config: Dictionary = {}
 var _salvage_loot: Array = []
+var _machine_finds: Dictionary = {}
 var _hazard_config: Dictionary = {}
 
 
@@ -75,12 +78,22 @@ func build(area_id: String, run_seed: int) -> Vector2:
 	_spawner_config = shape.get("spawner", area.get("spawner", {}))
 	_salvage_loot = shape.get("salvage_loot", area.get("salvage_loot", []))
 	_hazard_config = shape.get("hazard", area.get("hazard", {}))
+	_machine_finds = shape.get("machine_finds", area.get("machine_finds", {}))
 
 	_floors = _make_container("Floors", -2)
 	_wall_sprites = _make_container("WallSprites", -1)
 	_walls = StaticBody2D.new()
 	_walls.name = "Walls"
 	add_child(_walls)
+	# Light occlusion: walls block light and cast shadows (see LightingSystem). One
+	# tile-sized square polygon, shared by every wall occluder — cheap to build.
+	_occluders = _make_container("Occluders", 0)
+	_wall_occluder = OccluderPolygon2D.new()
+	var half := tile * 0.5
+	_wall_occluder.polygon = PackedVector2Array([
+		Vector2(-half, -half), Vector2(half, -half),
+		Vector2(half, half), Vector2(-half, half),
+	])
 	_doors_root = _make_container("Doors", -1)
 
 	var rng := RandomNumberGenerator.new()
@@ -101,8 +114,40 @@ func build(area_id: String, run_seed: int) -> Vector2:
 		room.build_trigger()
 		_populate_room(room, enemy_id)
 
+	_spawn_guaranteed_chain(rng)
 	_build_minimap_edges(connections)
 	return start_position
+
+
+## Guarantees at least one broken machine of EACH category (Recycler / Ammo Maker /
+## Component Maker), each pre-decided to a concrete specialisation, and records the run
+## chain on RunState for the debug panel. Specialisations are rolled independently, so
+## the run may be incompatible with the weapon — intentional.
+func _spawn_guaranteed_chain(rng: RandomNumberGenerator) -> void:
+	var categories: Array = _machine_finds.get("categories", _default_find_categories())
+	var non_start: Array = []
+	for r: Room in rooms:
+		if r.room_type != Room.RoomType.START and not r.interior_tiles.is_empty():
+			non_start.append(r)
+	if non_start.is_empty():
+		return
+	for cat: Dictionary in categories:
+		if bool(cat.get("no_guarantee", false)):
+			continue  # weapons are an optional find, not part of the guaranteed chain
+		var pool: Array = cat.get("pool", [])
+		if pool.is_empty():
+			continue
+		var pick: Variant = pool[rng.randi_range(0, pool.size() - 1)]
+		var spec_id := String(pick.get("id", "")) if pick is Dictionary else String(pick)
+		RunState.run_chain[String(cat.get("category", "Machine"))] = spec_id
+		var room: Room = non_start[rng.randi_range(0, non_start.size() - 1)]
+		var pickup := MachinePickup.new()
+		pickup.broken = true
+		pickup.category = String(cat.get("category", "Machine"))
+		pickup.spec_pool = [spec_id]  # pre-decided: repair reveals exactly this
+		pickup.repair_cost = cat.get("repair_cost", {})
+		room.add_child(pickup)
+		pickup.global_position = room._random_interior_point()
 
 
 # ----------------------------------------------------------- regions ----
@@ -335,7 +380,7 @@ func _render_tiles() -> void:
 			if _door_floors.has(pos):
 				_add_floor(floor_texture, world)
 			elif _is_wall(tx, ty):
-				_add_wall(wall_texture, world)
+				_add_wall(wall_texture, world, tx, ty)
 			else:
 				_add_floor(floor_texture, world)
 				rooms[r].interior_tiles.append(world)
@@ -355,11 +400,13 @@ func _render_tiles() -> void:
 func _add_floor(texture: Texture2D, world: Vector2) -> void:
 	var sprite := Sprite2D.new()
 	sprite.texture = texture
+	# Dim the open floor so walls read as the brighter structure in ambient light.
+	sprite.self_modulate = LightingSystem.FLOOR_TINT
 	_floors.add_child(sprite)
 	sprite.global_position = world
 
 
-func _add_wall(texture: Texture2D, world: Vector2) -> void:
+func _add_wall(texture: Texture2D, world: Vector2, tx: int, ty: int) -> void:
 	var sprite := Sprite2D.new()
 	sprite.texture = texture
 	_wall_sprites.add_child(sprite)
@@ -370,6 +417,50 @@ func _add_wall(texture: Texture2D, world: Vector2) -> void:
 	collision.shape = rect
 	collision.position = world
 	_walls.add_child(collision)
+	# Only walls with an open (non-wall) neighbour can ever be reached by light, so
+	# skip occluders on fully-buried tiles to keep the shadow-caster count down.
+	if _has_open_neighbour(tx, ty):
+		var occluder := LightOccluder2D.new()
+		occluder.occluder = _wall_occluder
+		occluder.position = world
+		_occluders.add_child(occluder)
+
+
+func _has_open_neighbour(tx: int, ty: int) -> bool:
+	for d: Vector2i in DIRS:
+		var nx := tx + d.x
+		var ny := ty + d.y
+		if nx < 0 or ny < 0 or nx >= _TW or ny >= _TH:
+			continue  # off-map counts as solid, never an opening
+		if not _is_wall(nx, ny):
+			return true
+	return false
+
+
+## Snaps a world position onto the nearest floor-tile center of `room` (default the start
+## room) so pre-placed stations line up with the grid. `exclude` keeps several stations on
+## distinct tiles.
+func snap_to_tile(world_pos: Vector2, room: Room = null, exclude: Array = []) -> Vector2:
+	var r := room
+	if r == null and not rooms.is_empty():
+		r = rooms[0]
+	if r == null:
+		return world_pos
+	return r.nearest_interior_tile(world_pos, exclude)
+
+
+## The room containing (or nearest to) a world position — the room that owns the
+## floor tile closest to it. Used by the Power Relay to know which room to light.
+func room_at(world_position: Vector2) -> Room:
+	var best: Room = null
+	var best_dist := INF
+	for r: Room in rooms:
+		for t: Vector2 in r.interior_tiles:
+			var d := t.distance_squared_to(world_position)
+			if d < best_dist:
+				best_dist = d
+				best = r
+	return best
 
 
 func _build_minimap_edges(connections: Array) -> void:
@@ -383,6 +474,8 @@ func _build_minimap_edges(connections: Array) -> void:
 func _populate_room(room: Room, enemy_id: String) -> void:
 	if room.room_type != Room.RoomType.START:
 		room.spawn_harvest(_harvest_config)
+		_maybe_spawn_machine(room)
+		_maybe_spawn_fabricator(room)
 	match room.room_type:
 		Room.RoomType.SALVAGE:
 			room.spawn_salvage()
@@ -392,6 +485,122 @@ func _populate_room(room: Room, enemy_id: String) -> void:
 			_add_spawners(room, _spawner_config, enemy_id)
 		Room.RoomType.WORKSHOP:
 			_add_repair_station(room)
+
+
+## Machines are FOUND BROKEN: each non-start room has a chance to hold one on a floor
+## tile. Repairing it (in MachinePickup) rolls its specialisation. Config:
+## machine_finds { chance, per_room_max, categories:[{category, repair_cost, pool}] };
+## with no categories it defaults to a broken Recycler (the 4 material recyclers).
+func _maybe_spawn_machine(room: Room) -> void:
+	var chance := float(_machine_finds.get("chance", 0.45))
+	var per_room := int(_machine_finds.get("per_room_max", 1))
+	var categories: Array = _machine_finds.get("categories", _default_find_categories())
+	if categories.is_empty():
+		return
+	for _i in per_room:
+		if room.rng.randf() >= chance:
+			continue
+		var cat: Dictionary = _weighted_category(categories, room.rng)
+		var pickup := MachinePickup.new()
+		pickup.broken = true
+		pickup.category = String(cat.get("category", "Machine"))
+		# FIXED specialisation: pre-roll one id now so the pile knows (and reveals) exactly
+		# what it becomes. This stops fishing for a family by repairing many random makers.
+		pickup.spec_pool = [_pick_spec(cat.get("pool", []), room.rng)]
+		pickup.repair_cost = cat.get("repair_cost", {})
+		room.add_child(pickup)
+		pickup.global_position = room._random_interior_point()
+
+
+## Picks a category by its `weight` (default 1). Ammo Makers carry a low weight so they
+## are the scarce find — you can't rely on your weapon's family turning up.
+func _weighted_category(categories: Array, rng: RandomNumberGenerator) -> Dictionary:
+	var total := 0.0
+	for c: Dictionary in categories:
+		total += float(c.get("weight", 1))
+	var pick := rng.randf() * total
+	for c: Dictionary in categories:
+		pick -= float(c.get("weight", 1))
+		if pick <= 0.0:
+			return c
+	return categories[categories.size() - 1]
+
+
+## Weighted pick of one spec id from a category pool.
+func _pick_spec(pool: Array, rng: RandomNumberGenerator) -> String:
+	if pool.is_empty():
+		return ""
+	var total := 0.0
+	for e: Variant in pool:
+		total += float(e.get("weight", 1)) if e is Dictionary else 1.0
+	var pick := rng.randf() * total
+	for e: Variant in pool:
+		pick -= float(e.get("weight", 1)) if e is Dictionary else 1.0
+		if pick <= 0.0:
+			return String(e.get("id", "")) if e is Dictionary else String(e)
+	var last: Variant = pool[pool.size() - 1]
+	return String(last.get("id", "")) if last is Dictionary else String(last)
+
+
+## The prototype default: broken Recyclers and Ammo Makers, each specialising randomly
+## on repair. (Component Makers get added as another category next slice.)
+func _default_find_categories() -> Array:
+	return [
+		{
+			"category": "Recycler",
+			"weight": 3,
+			"repair_cost": {"junk": 2},
+			"pool": [
+				{"id": "copper_recycler", "weight": 1},
+				{"id": "steel_recycler", "weight": 1},
+				{"id": "plastic_recycler", "weight": 1},
+				{"id": "ceramic_recycler", "weight": 1},
+			],
+		},
+		{
+			"category": "Ammo Maker",
+			"weight": 1,
+			"repair_cost": {"junk": 3},
+			"pool": [
+				{"id": "copper_ammo_maker", "weight": 1},
+				{"id": "steel_ammo_maker", "weight": 1},
+				{"id": "plastic_ammo_maker", "weight": 1},
+				{"id": "ceramic_ammo_maker", "weight": 1},
+			],
+		},
+		{
+			"category": "Component Maker",
+			"weight": 3,
+			"repair_cost": {"junk": 4},
+			"pool": [
+				{"id": "coupling_maker", "weight": 1},
+				{"id": "control_maker", "weight": 1},
+				{"id": "frame_maker", "weight": 1},
+				{"id": "thermal_maker", "weight": 1},
+			],
+		},
+		{
+			"category": "Weapon",
+			"weight": 2,
+			"no_guarantee": true,  # an optional upgrade over the basic gun, never guaranteed
+			"repair_cost": {"junk": 3},
+			"pool": [
+				{"id": "copper_weapon", "weight": 1},
+				{"id": "steel_weapon", "weight": 1},
+				{"id": "plastic_weapon", "weight": 1},
+				{"id": "ceramic_weapon", "weight": 1},
+			],
+		},
+	]
+
+
+## A Fabricator workbench turns up in a few rooms (see FabricatorStation).
+func _maybe_spawn_fabricator(room: Room) -> void:
+	if room.rng.randf() >= float(_machine_finds.get("fabricator_chance", 0.2)):
+		return
+	var station := FabricatorStation.new()
+	room.add_child(station)
+	station.global_position = room._random_interior_point()
 
 
 func _add_repair_station(room: Room) -> void:

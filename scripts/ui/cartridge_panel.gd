@@ -47,11 +47,16 @@ func _gather() -> void:
 	var f := RunState.factory
 	if f == null:
 		return
+	# Full/partial caches list first — each ships its whole stack in one slot.
+	for mi in f.machines.size():
+		var cs := f.cache_state(mi)
+		if not cs.is_empty() and int(cs.count) > 0:
+			_rows.append({"kind": "cache", "mi": mi, "id": String(cs.id), "count": int(cs.count)})
 	for y in f.rows:
 		for x in f.cols:
 			var cell := f.get_cell(Vector2i(x, y))
 			if cell.get("kind", "") == "resource":
-				_rows.append({"pos": Vector2i(x, y), "id": String(cell.id)})
+				_rows.append({"kind": "resource", "pos": Vector2i(x, y), "id": String(cell.id), "count": 1})
 
 
 func _process(_delta: float) -> void:
@@ -89,9 +94,13 @@ func _ship() -> void:
 		return
 	var items := {}
 	for i: int in _selected:
-		var id := String(_rows[i].id)
-		items[id] = int(items.get(id, 0)) + 1
-		RunState.factory.set_cell(_rows[i].pos, {})
+		var row: Dictionary = _rows[i]
+		var id := String(row.id)
+		if String(row.get("kind", "")) == "cache":
+			items[id] = int(items.get(id, 0)) + RunState.factory.take_cache(int(row.mi))
+		else:
+			items[id] = int(items.get(id, 0)) + 1
+			RunState.factory.set_cell(row.pos, {})
 	close()
 	for controller: Node in get_tree().get_nodes_in_group("run_controller"):
 		if controller.has_method("on_cartridge_shipped"):
@@ -102,7 +111,10 @@ func _ship() -> void:
 func _draw() -> void:
 	draw_rect(PANEL, Color(0.06, 0.06, 0.10, 0.97))
 	draw_string(_font, PANEL.position + Vector2(14, 28), "LOAD RETRIEVAL CARTRIDGE", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.9, 0.9, 0.95))
-	draw_string(_font, PANEL.position + Vector2(14, 50), "Loaded %d / %d   (unloaded resources are left behind)" % [_selected.size(), CAPACITY], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.8, 0.85, 0.9))
+	var shipped := 0
+	for i: int in _selected:
+		shipped += int(_rows[i].get("count", 1))
+	draw_string(_font, PANEL.position + Vector2(14, 50), "Loaded %d / %d slots  —  %d item(s) to ship  (rest left behind)" % [_selected.size(), CAPACITY, shipped], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.8, 0.85, 0.9))
 
 	if _rows.is_empty():
 		draw_string(_font, PANEL.position + Vector2(14, 96), "Nothing in the factory to load.", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.7, 0.6, 0.6))
@@ -112,7 +124,10 @@ func _draw() -> void:
 		if i == _cursor:
 			draw_rect(Rect2(PANEL.position.x + 8, y - 2, PANEL.size.x - 16, ROW_H), Color(1, 1, 1, 0.10))
 		var mark := "[x]" if picked else "[ ]"
-		var col := Color(0.6, 1, 0.7) if picked else Color(0.85, 0.85, 0.9)
-		draw_string(_font, Vector2(PANEL.position.x + 16, y + 14), "%s %s" % [mark, GameData.resource_name(String(_rows[i].id))], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, col)
+		var row: Dictionary = _rows[i]
+		var is_cache := String(row.get("kind", "")) == "cache"
+		var col := Color(0.6, 1, 0.7) if picked else (Color(0.6, 0.8, 1.0) if is_cache else Color(0.85, 0.85, 0.9))
+		var label := ("Cache: %d× %s" % [int(row.count), GameData.resource_name(String(row.id))]) if is_cache else GameData.resource_name(String(row.id))
+		draw_string(_font, Vector2(PANEL.position.x + 16, y + 14), "%s %s" % [mark, label], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, col)
 
 	draw_string(_font, PANEL.position + Vector2(14, PANEL.size.y - 14), "[W/S] move   [Space] load/unload   [Enter] ship & leave   [Esc] cancel", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.7, 0.7, 0.75))

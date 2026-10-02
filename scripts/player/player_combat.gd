@@ -6,11 +6,14 @@ extends Node
 
 const PROJECTILE_SCENE := preload("res://scenes/combat/projectile.tscn")
 
-@export_category("Basic Attack")
+@export_category("Weapon-stat fallbacks + range")
+## There is NO built-in gun: all firepower comes from a placed, ammo-fed weapon machine
+## (see FactoryGrid.try_fire_weapon). These damage/cooldown/speed values are only used if a
+## weapon def omits a field; attack_range is how far Grobit auto-targets.
 @export var damage := 1
 @export var attack_range := 220.0
-@export var cooldown := 0.4
-@export var projectile_speed := 360.0
+@export var cooldown := 0.55
+@export var projectile_speed := 320.0
 
 @export_category("Aegis Rounds upgrade")
 @export var aegis_shots := 3
@@ -59,16 +62,38 @@ func attack_nearest() -> bool:
 	var target := _resolve_target()
 	if target == null:
 		return false
-	var projectile := PROJECTILE_SCENE.instantiate() as BasicProjectile
-	projectile.global_position = (get_parent() as Node2D).global_position
-	projectile.direction = projectile.global_position.direction_to(target.global_position)
-	projectile.damage = damage
-	projectile.speed = projectile_speed
+	# You can ONLY deal damage through a placed weapon that's loaded with its ammo — there is
+	# no built-in gun. No loaded weapon → no shot (and no ammo spent). This ties all firepower
+	# to the production chain.
+	if RunState.factory == null:
+		return false
+	var shot := RunState.factory.try_fire_weapon()
+	if shot.is_empty():
+		return false
+	var dmg := int(round(float(shot.get("damage", damage))))
+	var cd := float(shot.get("cooldown", cooldown))
+	var spd := float(shot.get("projectile_speed", projectile_speed))
+	var pellets := maxi(1, int(shot.get("pellets", 1)))       # plastic: spread
+	var spread := deg_to_rad(float(shot.get("spread_deg", 0.0)))
+	var pierce := int(shot.get("pierce", 0))                  # ceramic: pierce
+	var origin := (get_parent() as Node2D).global_position
+	var base_dir := origin.direction_to(target.global_position)
 	var world := get_tree().current_scene
 	if world == null:
 		world = get_parent().get_parent()
-	world.add_child(projectile)
-	_cooldown_remaining = cooldown
+	for i in pellets:
+		# Fan the pellets evenly across the spread arc (a single pellet fires dead-on).
+		var offset := 0.0
+		if pellets > 1:
+			offset = lerpf(-spread * 0.5, spread * 0.5, float(i) / float(pellets - 1))
+		var projectile := PROJECTILE_SCENE.instantiate() as BasicProjectile
+		projectile.global_position = origin
+		projectile.direction = base_dir.rotated(offset)
+		projectile.damage = dmg
+		projectile.speed = spd
+		projectile.pierce = pierce
+		world.add_child(projectile)
+	_cooldown_remaining = cd
 	_on_shot_fired()
 	return true
 

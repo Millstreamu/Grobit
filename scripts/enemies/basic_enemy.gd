@@ -21,6 +21,11 @@ var _ranged := {}
 var _size := 16
 var _disabled_seconds := 0.0
 var _attack_cooldown := 0.0
+## Enemies no longer rush Grobit across the map: they only engage within `_aggro`
+## range and drift slowly otherwise — sparse hazards you can avoid (exploration first).
+var _aggro := 110.0
+var _wander_dir := Vector2.ZERO
+var _wander_timer := 0.0
 @onready var sprite: Sprite2D = $Sprite2D
 @onready var _collision: CollisionShape2D = $CollisionShape2D
 
@@ -34,6 +39,7 @@ func _ready() -> void:
 	_behavior = String(def.get("behavior", "melee"))
 	_melee = def.get("melee", {})
 	_ranged = def.get("ranged", {})
+	_aggro = float(def.get("aggro_range", 110.0))
 	health = max_health
 
 	sprite.texture = ContentLibrary.get_icon(String(def.get("sprite", "enemy_basic")), Vector2i(_size, _size), String(def.get("color", "")))
@@ -59,11 +65,26 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	# Only engage when Grobit is near; otherwise drift slowly (avoidable hazard).
+	if global_position.distance_to(player.global_position) > _aggro:
+		_wander(delta)
+		move_and_slide()
+		return
+
 	if _behavior == "ranged":
 		_ranged_behavior(player)
 	else:
 		_melee_behavior(player)
 	move_and_slide()
+
+
+## Slow idle drift, re-picking a direction every few seconds. No attacks while wandering.
+func _wander(delta: float) -> void:
+	_wander_timer -= delta
+	if _wander_timer <= 0.0:
+		_wander_timer = randf_range(1.5, 3.5)
+		_wander_dir = Vector2.RIGHT.rotated(randf() * TAU) if randf() < 0.6 else Vector2.ZERO
+	velocity = _wander_dir * movement_speed * 0.3
 
 
 func _melee_behavior(player: Node2D) -> void:
@@ -140,7 +161,7 @@ func _spawn_drops() -> void:
 		if amount <= 0:
 			continue
 		var pickup := PICKUP_SCENE.instantiate()
-		pickup.resource_id = String(drop.get("resource", "scrap_metal"))
+		pickup.resource_id = String(drop.get("resource", "junk"))
 		pickup.amount = amount
 		var angle := TAU * (float(index) / maxf(1.0, float(drops.size())))
 		pickup.global_position = global_position + Vector2.RIGHT.rotated(angle) * 14.0
@@ -154,4 +175,4 @@ func _drop_table() -> Array:
 	var table: Variant = drops.get(enemy_id, null)
 	if table is Array:
 		return table
-	return [{"resource": "scrap_metal", "min": 1, "max": 2, "chance": 1.0}]
+	return [{"resource": "junk", "min": 1, "max": 2, "chance": 1.0}]

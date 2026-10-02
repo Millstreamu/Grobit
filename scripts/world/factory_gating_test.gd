@@ -6,10 +6,9 @@ func _ready() -> void:
 	var failures := 0
 
 	# Costs (JSON numbers parse as floats — compare as ints).
-	failures += _check(int(RunState.part_cost("smelter").get("scrap_metal", 0)) == 3, "smelter costs scrap_metal 3")
 	failures += _check(int(RunState.part_cost("constructor").get("metal_plate", 0)) == 2, "constructor costs metal_plate 2")
-	failures += _check(int(RunState.part_cost("__conveyor").get("scrap_metal", 0)) == 1, "conveyor costs scrap_metal 1")
-	failures += _check(int(RunState.part_cost("__splitter").get("scrap_metal", 0)) == 2, "splitter costs scrap_metal 2")
+	failures += _check(int(RunState.part_cost("__conveyor").get("junk", 0)) == 1, "conveyor costs junk 1")
+	failures += _check(int(RunState.part_cost("__splitter").get("junk", 0)) == 2, "splitter costs junk 2")
 
 	# Gating: the Constructor is locked until circuit boards are delivered.
 	MetaState.machines_unlocked.clear()

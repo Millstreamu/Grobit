@@ -1,75 +1,66 @@
 extends Node
-## Headless test for Step 3 minigame logic (ScrapNode.hit_slot + arm intake). Run:
-##   godot --headless --path . res://scenes/test/scrap_node_test.tscn
-## Exits 0 on success. Sets node fields directly for determinism (no RNG).
+## Hold-to-harvest scrap piles. Holding [F] fills a timer; each completion stacks one unit
+## of scrap into the Scrapper Arm bar (RunState.arm_scrap, to 99). General junk goes to the
+## grid instead. A slot that's full pauses the pile; an emptied pile is removed.
+
+var fail := 0
+const H := ScrapNode.HARVEST_SECONDS
+
 
 func _ready() -> void:
-	var failures := 0
+	RunState.begin_run(GameData.first_area_id(), 1)  # bare grid + empty arm bar
 
-	# --- Harvest deposits to the arm, spends a token; arm-full blocks with no cost.
-	RunState.factory = _fresh_arm_grid()  # 3 free holding cells
-	var n := _node(5, ["scrap_metal", "scrap_metal", "scrap_metal", "scrap_metal"], [0, 0, 0, 0])
-	failures += _check(n.hit_slot(0) == "scrap_metal", "harvest returns the item id")
-	failures += _check(n.tokens == 4, "harvest spends a token")
-	failures += _check(String(n.slots[0]) == "", "harvested slot becomes empty")
-	failures += _check(RunState.factory.harvest_space() == 2, "item deposited into an arm holding cell")
-	# Fill the arm (2 more), then a further harvest must be blocked.
-	n.hit_slot(1)
-	n.hit_slot(2)
-	failures += _check(RunState.factory.harvest_space() == 0, "arm now full")
-	failures += _check(n.tokens == 2, "three harvests spent three tokens")
-	failures += _check(n.hit_slot(3) == "arm_full", "harvest blocked when arm is full")
-	failures += _check(n.tokens == 2, "arm-full harvest costs no token")
-	failures += _check(String(n.slots[3]) == "scrap_metal", "arm-full harvest leaves the item")
+	var n := ScrapNode.new()
+	n.generate({"tokens_min": 5, "tokens_max": 5, "pool": [{"id": "copper_scrap", "weight": 1}]})
+	add_child(n)
 
-	# --- Rust: each hit spends a token and chips rust; then the item is takeable.
-	RunState.factory = _fresh_arm_grid()
-	var r := _node(5, ["scrap_metal", "", "", ""], [2, 0, 0, 0])
-	failures += _check(r.hit_slot(0) == "rust", "rust hit returns 'rust'")
-	failures += _check(r.tokens == 4 and int(r.rust[0]) == 1, "rust hit spends token, chips one")
-	r.hit_slot(0)
-	failures += _check(int(r.rust[0]) == 0, "rust fully cleared after 2 hits")
-	failures += _check(r.hit_slot(0) == "scrap_metal", "exposed slot then harvests")
+	# A partial hold deposits nothing.
+	n.hold_interact(H * 0.5)
+	_ck(RunState.arm_count("copper_scrap") == 0, "a partial hold deposits nothing")
 
-	# --- Empty exposed slot: no token cost.
-	RunState.factory = _fresh_arm_grid()
-	var e := _node(3, ["", "", "", ""], [0, 0, 0, 0])
-	failures += _check(e.hit_slot(0) == "empty", "empty slot returns 'empty'")
-	failures += _check(e.tokens == 3, "empty slot costs no token")
+	# Completing the fill stacks one copper scrap into the arm and spends a charge.
+	n.hold_interact(H * 0.5 + 0.01)
+	_ck(RunState.arm_count("copper_scrap") == 1 and n.tokens == 4, "a full hold stacks one scrap into the arm")
 
-	# --- Depletion: last token spent → node is spent.
-	RunState.factory = _fresh_arm_grid()
-	var s := _node(1, ["scrap_metal", "scrap_metal", "", ""], [0, 0, 0, 0])
-	failures += _check(s.hit_slot(0) == "scrap_metal", "final harvest succeeds")
-	failures += _check(s.is_spent(), "node spent when tokens hit 0")
-	failures += _check(s.hit_slot(1) == "spent", "spent node rejects further hits")
+	# Releasing resets the in-progress fill.
+	n.hold_interact(H * 0.6)
+	n.hold_release()
+	n.hold_interact(H * 0.6)
+	_ck(RunState.arm_count("copper_scrap") == 1, "releasing [F] resets progress")
 
-	if failures == 0:
+	# A full arm slot (99) pauses harvesting.
+	RunState.arm_scrap["copper_scrap"] = RunState.ARM_STACK_MAX
+	var before := n.tokens
+	n.hold_interact(H + 0.1)
+	_ck(n.tokens == before, "a full arm slot pauses harvesting (no charge spent)")
+
+	# Draining the last charge frees the pile.
+	RunState.arm_scrap["copper_scrap"] = 0
+	var s := ScrapNode.new()
+	s.generate({"tokens_min": 1, "tokens_max": 1, "pool": [{"id": "steel_scrap", "weight": 1}]})
+	add_child(s)
+	s.hold_interact(H + 0.1)
+	_ck(RunState.arm_count("steel_scrap") == 1 and s.is_spent(), "last charge empties the pile into the arm")
+	_ck(s.is_queued_for_deletion(), "an emptied pile is removed")
+
+	# General junk routes to the grid, not the arm.
+	var j := ScrapNode.new()
+	j.generate({"tokens_min": 1, "tokens_max": 1, "pool": [{"id": "junk", "weight": 1}]})
+	add_child(j)
+	j.hold_interact(H + 0.1)
+	_ck(int(RunState.currency_count("junk")) >= 1, "general junk goes to the Scrap currency, not a grid cell or arm slot")
+	_ck(int(RunState.resource_counts().get("junk", 0)) == 0, "junk never takes a grid cell")
+
+	if fail == 0:
 		print("SCRAP_NODE_TEST: ALL PASS")
 	else:
-		printerr("SCRAP_NODE_TEST: %d FAILURE(S)" % failures)
-	get_tree().quit(failures)
+		printerr("SCRAP_NODE_TEST: %d FAILURE(S)" % fail)
+	get_tree().quit(fail)
 
 
-func _fresh_arm_grid() -> FactoryGrid:
-	var g := FactoryGrid.new(6, 3)
-	g.place_machine("scrapper_arm", Vector2i(0, 0))  # 3 holding cells
-	return g
-
-
-func _node(tokens: int, slots: Array, rust: Array) -> ScrapNode:
-	var n := ScrapNode.new()
-	n.tokens = tokens
-	n.slots = slots.duplicate()
-	n.rust = rust.duplicate()
-	n.loose = false
-	n._pool = [{"id": "scrap_metal", "weight": 1}]
-	return n
-
-
-func _check(condition: bool, label: String) -> int:
+func _ck(condition: bool, label: String) -> void:
 	if condition:
 		print("  ok   - ", label)
-		return 0
-	printerr("  FAIL - ", label)
-	return 1
+	else:
+		fail += 1
+		printerr("  FAIL - ", label)

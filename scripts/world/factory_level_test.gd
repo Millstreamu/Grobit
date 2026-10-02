@@ -31,15 +31,22 @@ func _ready() -> void:
 	failures += _check(g.upgrade_fits([shape[0]], 1) == false, "upgrade_fits rejects a now-claimed cell")
 	failures += _check(g.upgrade_fits([], FactoryGrid.SLOTS_PER_LEVEL) == false, "upgrade_fits rejects a wrong-size shape")
 
-	# Speed: a level-2 refiner (2.4s) beats a level-1 refiner (3.0s). Feed both, tick
-	# 2.5s total, and only the leveled one should have produced.
-	var mi2 := g.place_machine("smelter", Vector2i(2, 3))  # input (1,3), output (3,3)
-	g.set_cell(Vector2i(1, 1), {"kind": "resource", "id": "scrap_metal"})
-	g.set_cell(Vector2i(1, 3), {"kind": "resource", "id": "scrap_metal"})
+	# Level no longer affects speed. In a clean grid, a level-2 and a level-1 smelter
+	# (both 3.0s) finish at the same time.
+	var s := FactoryGrid.new(6, 4)
+	var a := s.place_machine("smelter", Vector2i(2, 0))  # input (1,0), output (3,0)
+	var b := s.place_machine("smelter", Vector2i(2, 2))  # input (1,2), output (3,2)
+	s.level_up_in_place(a)  # a → level 2, b stays level 1
+	failures += _check(s.level_of(a) == 2 and s.level_of(b) == 1 and a >= 0 and b >= 0, "two smelters placed, one leveled")
+	s.set_cell(Vector2i(1, 0), {"kind": "resource", "id": "scrap_metal"})
+	s.set_cell(Vector2i(1, 2), {"kind": "resource", "id": "scrap_metal"})
 	for _i in 5:
-		g.tick(0.5)
-	failures += _check(String(g.get_cell(Vector2i(3, 1)).get("id", "")) == "metal_bar", "level-2 machine produced by 2.5s")
-	failures += _check(g.get_cell(Vector2i(3, 3)).is_empty(), "level-1 machine not yet done at 2.5s (slower)")
+		s.tick(0.5)  # 2.5s < 3.0s
+	failures += _check(s.get_cell(Vector2i(3, 0)).is_empty() and s.get_cell(Vector2i(3, 2)).is_empty(), "level-2 is NOT faster — neither done at 2.5s")
+	for _i in 2:
+		s.tick(0.5)  # total 3.5s > 3.0s
+	failures += _check(String(s.get_cell(Vector2i(3, 0)).get("id", "")) == "metal_bar", "level-2 smelter produces at the normal 3.0s")
+	failures += _check(String(s.get_cell(Vector2i(3, 2)).get("id", "")) == "metal_bar", "level-1 smelter produces at the same time")
 
 	if failures == 0:
 		print("FACTORY_LEVEL_TEST: ALL PASS")

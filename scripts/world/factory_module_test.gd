@@ -37,12 +37,12 @@ func _ready() -> void:
 	MetaState.modules_owned = {"overclock": 1}
 	failures += _check(MetaState.module_count("overclock") - g.installed_count("overclock") == 0, "no spare overclock left to install")
 
-	# Effect: level 2 (0.8) * overclock (0.8) = 1.92s, so it finishes by 2.0s; and
-	# yield_amp adds a bonus item, so one craft yields two metal_bar.
+	# Effect: level no longer speeds things up; overclock (0.8) alone gives 3.0 * 0.8 =
+	# 2.4s, so it finishes by 2.5s; and yield_amp adds a bonus item (one craft → two bars).
 	g.set_cell(Vector2i(1, 1), {"kind": "resource", "id": "scrap_metal"})
-	for _i in 4:
+	for _i in 5:
 		g.tick(0.5)
-	failures += _check(String(g.get_cell(Vector2i(3, 1)).get("id", "")) == "metal_bar", "sped-up craft finished by 2.0s")
+	failures += _check(String(g.get_cell(Vector2i(3, 1)).get("id", "")) == "metal_bar", "overclocked craft finished by 2.5s")
 	failures += _check(int(g.resource_counts().get("metal_bar", 0)) == 2, "yield module produced a bonus item (2 total)")
 
 	# Remove a module.

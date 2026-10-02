@@ -1,6 +1,24 @@
 {
   "_comment": "Grid-machine recipes (a list). Each: 'machine', 'needs' (id->count, matched set-based across input cells), 'produces' (id->count, distributed across output cells), 'seconds'. First recipe whose needs are present and whose outputs have room runs. Broken motors show the fast-vs-efficient choice: the Recycler is quick (2 materials), while Grinder → Separator recovers 3.",
   "recipes": [
+    { "_comment": "Specialised recyclers turn their OWN typed scrap (from the matching scrap pile) into the base material. General Junk is the repair/build currency, not a recycler input.",
+      "machine": "copper_recycler", "needs": { "copper_scrap": 1 }, "produces": { "copper": 1 }, "seconds": 2.0 },
+    { "machine": "steel_recycler", "needs": { "steel_scrap": 1 }, "produces": { "steel": 1 }, "seconds": 2.0 },
+    { "machine": "plastic_recycler", "needs": { "plastic_scrap": 1 }, "produces": { "plastic": 1 }, "seconds": 2.0 },
+    { "machine": "ceramic_recycler", "needs": { "ceramic_scrap": 1 }, "produces": { "ceramic": 1 }, "seconds": 2.0 },
+
+    { "_comment": "Level-1 ammo: 2 of a family's material -> its ammo. 'level' gates higher recipes on machine level (architecture for L2+ recipes like AA+AD -> Plasma Charge).",
+      "machine": "copper_ammo_maker", "needs": { "copper": 2 }, "produces": { "charge_cells": 1 }, "seconds": 2.5, "level": 1 },
+    { "machine": "steel_ammo_maker", "needs": { "steel": 2 }, "produces": { "steel_slugs": 1 }, "seconds": 2.5, "level": 1 },
+    { "machine": "plastic_ammo_maker", "needs": { "plastic": 2 }, "produces": { "resin_capsules": 1 }, "seconds": 2.5, "level": 1 },
+    { "machine": "ceramic_ammo_maker", "needs": { "ceramic": 2 }, "produces": { "ceramic_charges": 1 }, "seconds": 2.5, "level": 1 },
+
+    { "_comment": "Component Makers combine TWO base materials into a component. Different makers/material pairs than the ammo makers -> machine type decides the output. Prototype set; extend freely.",
+      "machine": "coupling_maker", "needs": { "copper": 1, "steel": 1 }, "produces": { "power_coupling": 1 }, "seconds": 3.0 },
+    { "machine": "control_maker", "needs": { "copper": 1, "plastic": 1 }, "produces": { "control_assembly": 1 }, "seconds": 3.0 },
+    { "machine": "frame_maker", "needs": { "steel": 1, "ceramic": 1 }, "produces": { "reinforced_frame": 1 }, "seconds": 3.0 },
+    { "machine": "thermal_maker", "needs": { "plastic": 1, "ceramic": 1 }, "produces": { "thermal_core": 1 }, "seconds": 3.0 },
+
     { "machine": "scrap_recycler", "needs": { "bent_panel": 1 }, "produces": { "scrap_metal": 2 }, "seconds": 2.0 },
     { "machine": "scrap_recycler", "needs": { "cable_bundle": 1 }, "produces": { "copper_wire": 1, "polymer": 1 }, "seconds": 2.0 },
     { "machine": "scrap_recycler", "needs": { "broken_motor": 1 }, "produces": { "scrap_metal": 1, "mechanical_parts": 1 }, "seconds": 2.5 },

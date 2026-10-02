@@ -1,12 +1,83 @@
 {
   "generation": {
-    "grid_width": 10,
-    "grid_height": 8,
-    "cell_size": 6,
+    "grid_width": 7,
+    "grid_height": 6,
+    "cell_size": 5,
     "room_count": 20,
     "room_min_cells": 4,
-    "room_max_cells": 7,
-    "loop_chance": 0.15,
-    "door_width": 1
+    "room_max_cells": 8,
+    "loop_chance": 0.14,
+    "door_width": 1,
+    "room_type_weights": {
+      "combat": 1,
+      "salvage": 4,
+      "hazard": 1,
+      "spawner": 0,
+      "workshop": 2
+    },
+    "enemy_weights": {
+      "basic_enemy": 5,
+      "swarmer": 3,
+      "brute": 2,
+      "shooter": 2
+    },
+    "min_enemies": 0,
+    "max_enemies": 2,
+    "harvest": {
+      "_note": "TYPED scrap piles. Each is mostly its own material's scrap (fed to the matching recycler) with a little loose Junk mixed in. A room rolls 0-2 of each kind, so you find a varied spread of piles.",
+      "nodes": [
+        { "label": "copper scrap", "sprite": "scrap_copper", "color": "b0632a",
+          "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
+          "pool": [ { "id": "copper_scrap", "weight": 5 }, { "id": "junk", "weight": 1 } ] },
+        { "label": "steel scrap", "sprite": "scrap_steel", "color": "8f98a3",
+          "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
+          "pool": [ { "id": "steel_scrap", "weight": 5 }, { "id": "junk", "weight": 1 } ] },
+        { "label": "plastic scrap", "sprite": "scrap_plastic", "color": "359186",
+          "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
+          "pool": [ { "id": "plastic_scrap", "weight": 5 }, { "id": "junk", "weight": 1 } ] },
+        { "label": "ceramic scrap", "sprite": "scrap_ceramic", "color": "c4bba2",
+          "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
+          "pool": [ { "id": "ceramic_scrap", "weight": 5 }, { "id": "junk", "weight": 1 } ] }
+      ]
+    },
+    "machine_finds": {
+      "_note": "Broken machines are common now — most rooms hold one or two. Repair cost stays general Junk (see _default_find_categories).",
+      "chance": 0.7,
+      "per_room_max": 2,
+      "fabricator_chance": 0.2
+    },
+    "spawner": {
+      "markers": 1,
+      "base_count": 3,
+      "count_growth": 2,
+      "base_health": 3,
+      "base_speed": 55,
+      "health_per_wave": 1,
+      "speed_per_wave": 0.05
+    },
+    "repair": {
+      "cost": {
+        "junk": 2
+      },
+      "rewards": [
+        "ability",
+        "max_health",
+        "aegis_rounds"
+      ]
+    },
+    "salvage_loot": [
+      { "resource": "junk", "min": 3, "max": 6, "chance": 1.0 },
+      { "resource": "junk", "min": 2, "max": 4, "chance": 0.7 }
+    ],
+    "resource_drops": {
+      "basic_enemy": [
+        {
+          "resource": "junk",
+          "min": 1,
+          "max": 1,
+          "chance": 0.6
+        }
+      ]
+    }
   }
 }
