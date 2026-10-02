@@ -302,19 +302,9 @@ func _resource_line() -> String:
 
 
 func _interaction_prompt() -> String:
-	var best: Node2D
-	var best_priority := -INF
-	var best_distance := INF
-	for node: Node in get_tree().get_nodes_in_group("interactables"):
-		if not node is Node2D or not node.has_method("can_interact") or not node.can_interact():
-			continue
-		# Match SelectionManager: higher priority wins, then nearest (doors sit low).
-		var priority := int(node.interact_priority()) if node.has_method("interact_priority") else 0
-		var distance := _player.global_position.distance_to((node as Node2D).global_position)
-		if priority > best_priority or (priority == best_priority and distance < best_distance):
-			best_priority = priority
-			best_distance = distance
-			best = node
+	var best := SelectionManager.nearest_interactable(
+		_player, get_tree().get_nodes_in_group("interactables")
+	)
 	return best.interaction_prompt() if best != null else ""
 
 
