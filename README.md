@@ -99,6 +99,7 @@ godot --headless --path . --script tests/content_loader_test.gd
 godot --headless --path . --script tests/movement_test.gd
 godot --headless --path . --script tests/combat_test.gd
 godot --headless --path . scenes/test/inventory_selection_test.tscn
+godot --headless --path . scenes/test/door_clearance_test.tscn
 ```
 
 The first combat-loop tuning values are exported in the Inspector: enemy

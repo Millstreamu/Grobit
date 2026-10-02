@@ -69,21 +69,25 @@ func _ready() -> void:
 	# Start-room stations snap onto floor-tile centers (distinct tiles) so they line up
 	# with the grid instead of sitting at arbitrary pixel offsets.
 	var tile := 32.0
-	var taken: Array = []
-
 	# Retrieval pad — where you ship out once the objective is done.
-	var pad := RetrievalPad.new()
-	add_child(pad)
-	pad.global_position = generator.snap_to_tile(start_position + Vector2(tile, tile), null, taken)
-	taken.append(pad.global_position)
-	lighting.add_lamp(pad.global_position, 96.0, 1.0, Color(0.7, 0.9, 1.0))
+	var pad_position: Variant = generator.claim_prop_tile(start_position + Vector2(tile, tile))
+	if pad_position == null:
+		push_error("RunController: no safe start-room tile for Retrieval Pad.")
+	else:
+		var pad := RetrievalPad.new()
+		add_child(pad)
+		pad.global_position = pad_position
+		lighting.add_lamp(pad.global_position, 96.0, 1.0, Color(0.7, 0.9, 1.0))
 
 	# Component Exchange — sell finished components for credit toward a random machine.
-	var exchange := ComponentExchange.new()
-	add_child(exchange)
-	exchange.global_position = generator.snap_to_tile(start_position + Vector2(-tile, tile), null, taken)
-	taken.append(exchange.global_position)
-	lighting.add_lamp(exchange.global_position, 96.0, 1.0, Color(1.0, 0.9, 0.6))
+	var exchange_position: Variant = generator.claim_prop_tile(start_position + Vector2(-tile, tile))
+	if exchange_position == null:
+		push_error("RunController: no safe start-room tile for Component Exchange.")
+	else:
+		var exchange := ComponentExchange.new()
+		add_child(exchange)
+		exchange.global_position = exchange_position
+		lighting.add_lamp(exchange.global_position, 96.0, 1.0, Color(1.0, 0.9, 0.6))
 
 	var selection := SelectionManager.new()
 	selection.name = "SelectionManager"
@@ -125,6 +129,11 @@ func _debug_spawn_enemies() -> void:
 
 # Debug helper (env-gated): a scrap node + repair station beside the start.
 func _debug_spawn_loot() -> void:
+	var node_position: Variant = generator.claim_prop_tile(player.global_position + Vector2(32, 0))
+	var station_position: Variant = generator.claim_prop_tile(player.global_position + Vector2(-32, 0))
+	if node_position == null or station_position == null:
+		push_warning("RunController: not enough safe start-room tiles for debug loot.")
+		return
 	var node := ScrapNode.new()
 	node.generate({
 		"label": "salvage", "tokens_min": 6, "tokens_max": 8,
@@ -132,21 +141,25 @@ func _debug_spawn_loot() -> void:
 		"pool": [{"id": "junk", "weight": 1}],
 	})
 	add_child(node)
-	node.global_position = generator.snap_to_tile(player.global_position + Vector2(32, 0))
+	node.global_position = node_position
 	var station := RepairStation.new()
 	station.cost = {"junk": 2}
 	station.reward = "ability"
 	add_child(station)
-	station.global_position = generator.snap_to_tile(player.global_position + Vector2(-32, 0), null, [node.global_position])
+	station.global_position = station_position
 
 
 func _spawn_objective() -> void:
 	if generator.objective_room == null:
 		return
+	var position: Variant = generator.claim_prop_tile(generator.objective_room.center(), generator.objective_room)
+	if position == null:
+		push_error("RunController: no safe objective-room tile for Objective Terminal.")
+		return
 	# Slice: a simple objective terminal that unlocks shipping when activated.
 	var terminal := ObjectiveTerminal.new()
 	add_child(terminal)
-	terminal.global_position = generator.snap_to_tile(generator.objective_room.center(), generator.objective_room)
+	terminal.global_position = position
 	if lighting != null:
 		lighting.add_lamp(terminal.global_position, 120.0, 1.1, Color(1.0, 0.8, 0.6))
 
