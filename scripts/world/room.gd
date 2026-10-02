@@ -23,7 +23,7 @@ var tile_size := 32.0
 var map_position := Vector2.ZERO
 var doors: Array[Door] = []
 # Floor centres which must stay open for navigation (currently doorway landings),
-# plus floor centres already occupied by permanent solid props.  Keep these separate:
+# plus floor centres already occupied by generated, stationary room content. Keep these separate:
 # build-mode validation cares about navigation reservations, while generated props
 # must avoid both sets.
 var navigation_reserved: Dictionary = {}
@@ -132,7 +132,9 @@ func claim_nearest_prop_tile(world_position: Vector2) -> Variant:
 	return best
 
 
-## Claims a random safe tile without allowing two permanent props to overlap.
+## Claims a random safe tile without allowing generated ground content to overlap.
+## This registry is shared by solid props, broken-machine piles, and loose salvage:
+## non-solid content still needs its own readable and independently interactable tile.
 func claim_random_prop_tile() -> Variant:
 	var available: Array[Vector2] = []
 	for tile_center: Vector2 in interior_tiles:
@@ -200,10 +202,13 @@ func spawn_salvage() -> void:
 		var amount := rng.randi_range(int(drop.get("min", 1)), int(drop.get("max", 1)))
 		if amount <= 0:
 			continue
+		var position: Variant = claim_random_prop_tile()
+		if position == null:
+			continue
 		var pickup := PICKUP_SCENE.instantiate()
 		pickup.resource_id = String(drop.get("resource", "scrap_metal"))
 		pickup.amount = amount
-		pickup.global_position = _random_interior_point()
+		pickup.global_position = position
 		add_child(pickup)
 
 
