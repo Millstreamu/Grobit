@@ -1,0 +1,4 @@
+[gd_scene load_steps=2 format=3 uid="uid://b7storagetest001"]
+[ext_resource type="Script" path="res://scripts/world/storage_test.gd" id="1"]
+[node name="StorageTest" type="Node"]
+script = ExtResource("1")

@@ -89,6 +89,12 @@ var _install_index := 0
 ## marked yet. See _combine_at_cursor.
 var _combine_a_core := Vector2i(-1, -1)
 
+## Storage list ([G]): a temporary holding list for unplaced machines so you can rearrange
+## the grid. You CANNOT close the inventory until it's empty (no long-term storage). Browse
+## it with [G]; retrieve one into your hand with [Space]. See _handle_storage_input.
+var _storage_mode := false
+var _storage_index := 0
+
 # Processing animations: input items slide toward the core as a craft progresses,
 # and freshly-produced items pop/slide out of the core into their output cell.
 var _prev_res: Dictionary = {}    # pos -> resource id last frame (to spot new items)
@@ -135,10 +141,10 @@ func is_open() -> bool:
 	return visible
 
 
-## Opens the inventory straight into place-mode for a machine you just acquired (it's
-## already in stock). The auto-placer picks it up.
-func open_place(_id: String) -> void:
+## Opens the inventory in place-mode for a specific machine you just acquired/retrieved.
+func open_place(id: String) -> void:
 	open()
+	_begin_place(id)
 
 
 func open() -> void:
@@ -150,35 +156,64 @@ func open() -> void:
 	_pops.clear()
 	_prev_res = _res_snapshot()  # so already-present items don't all pop on open
 	get_tree().paused = true
-	_place_next_stock_machine()  # anything you've picked up must be placed or scrapped
+	if _has_unplaced():
+		_message = "%d machine(s) in storage — [G] to place them (can't close until empty)." % _stock_total()
 	queue_redraw()
 
 
-## The next machine waiting in stock to be placed (not transport/caches — those lay from
-## the [B] radial — and not the free starter arm).
-func _next_stock_machine() -> String:
+## Machine ids currently in storage (not transport/caches — those lay from the [B] radial —
+## and not the free starter arm).
+func _storage_ids() -> Array:
+	var ids: Array = []
 	for id: String in RunState.machine_stock:
 		if RunState.stock_count(id) <= 0:
 			continue
 		if id == "scrapper_arm" or id in RADIAL_PARTS or id.begins_with("__"):
 			continue
 		if GameData.machines.has(id):
-			return id
-	return ""
+			ids.append(id)
+	return ids
 
 
-## Enters place-mode ("in hand") for the next stock machine, if any and we're idle.
-func _place_next_stock_machine() -> bool:
-	if _place_mode or _move_mode or _move_conv or _install_mode or _radial_mode:
+func _next_stock_machine() -> String:
+	var ids := _storage_ids()
+	return String(ids[0]) if not ids.is_empty() else ""
+
+
+func _stock_total() -> int:
+	var n := 0
+	for id: String in _storage_ids():
+		n += RunState.stock_count(id)
+	return n
+
+
+## True while any machine is still waiting in storage (gates closing the inventory).
+func _has_unplaced() -> bool:
+	return not _storage_ids().is_empty()
+
+
+## Enters place-mode ("in hand") for a specific stored machine. It stays counted in storage
+## until actually dropped (so cancelling just leaves it there). Idle-only.
+func _begin_place(id: String) -> bool:
+	if _place_mode or _move_mode or _move_conv or _install_mode or _radial_mode or _storage_mode:
 		return false
-	var id := _next_stock_machine()
-	if id == "":
+	if RunState.stock_count(id) <= 0:
 		return false
 	_place_id = id
 	_place_mode = true
 	_cursor = Vector2i(1, 1)
 	_roll_place_layout()
-	_message = "Place %s — [Space] drop, [R] scrap for tech data." % _part_name(id)
+	_message = "Place %s — [Space] drop, [R] scrap, [G]/[Esc] back to storage." % _part_name(id)
+	return true
+
+
+## User-requested close: refused while machines are still in storage (place or scrap them
+## all first — there's no long-term storage). Returns true if it actually closed.
+func try_close() -> bool:
+	if _has_unplaced():
+		_message = "Place or scrap the %d machine(s) in storage first — [G] to open it." % _stock_total()
+		return false
+	close()
 	return true
 
 
@@ -199,6 +234,7 @@ func _return_carried() -> void:
 func _reset_modes() -> void:
 	_combine_a_core = Vector2i(-1, -1)
 	_radial_mode = false
+	_storage_mode = false
 	_place_mode = false
 	_move_mode = false
 	_move_conv = false
@@ -293,6 +329,9 @@ func _handle_input() -> void:
 	if _radial_mode:
 		_handle_radial_input()
 		return
+	if _storage_mode:
+		_handle_storage_input()
+		return
 	if _place_mode:
 		_handle_place_input()
 		return
@@ -303,9 +342,12 @@ func _handle_input() -> void:
 			_combine_a_core = Vector2i(-1, -1)  # cancel a pending combine selection
 			_message = "Combine cancelled."
 			return
-		close()
+		try_close()  # refused while machines are still in storage
 		return
 	_move_cursor()
+	if Input.is_action_just_pressed("storage"):
+		_open_storage()
+		return
 	if Input.is_action_just_pressed("toggle_build"):
 		_open_radial()
 		return
@@ -369,6 +411,35 @@ func _pick_radial(id: String) -> void:
 	_message = "Place %s — [Space] drop, [R] rotate, [Esc] cancel." % _part_name(id)
 
 
+# --- storage list (press [G]) ---
+
+func _open_storage() -> void:
+	if not _has_unplaced():
+		_message = "Storage is empty. [M] to lift a machine, then [G] to stash it."
+		return
+	_storage_mode = true
+	_storage_index = 0
+	_message = "Storage — [W/S] pick, [Space] place it, [Esc] back."
+
+
+func _handle_storage_input() -> void:
+	if Input.is_action_just_pressed("build_cancel") or Input.is_action_just_pressed("storage"):
+		_storage_mode = false
+		return
+	var ids := _storage_ids()
+	if ids.is_empty():
+		_storage_mode = false
+		return
+	_storage_index = clampi(_storage_index, 0, ids.size() - 1)
+	if Input.is_action_just_pressed("move_up"):
+		_storage_index = maxi(_storage_index - 1, 0)
+	if Input.is_action_just_pressed("move_down"):
+		_storage_index = mini(_storage_index + 1, ids.size() - 1)
+	if Input.is_action_just_pressed("attack") or Input.is_action_just_pressed("confirm"):
+		_storage_mode = false
+		_begin_place(String(ids[_storage_index]))  # retrieve into your hand to place
+
+
 # --- combine (press [C] on two machine cores → one random machine in hand) ---
 
 ## Marks the machine under the cursor, or — if one of the same type is already marked —
@@ -415,7 +486,7 @@ func _combine_at_cursor() -> void:
 	var result := _combine_result(group, a_id, id)
 	RunState.add_to_stock(result)
 	_message = "Combined %s + %s → %s." % [a_name, b_name, _part_name(result)]
-	_place_next_stock_machine()  # drop the result into your hand to place
+	_begin_place(result)  # drop the result into your hand to place
 
 
 ## The combine group an id belongs to ("" if it can't be combined).
@@ -469,14 +540,11 @@ func _roll_place_layout() -> void:
 
 func _handle_place_input() -> void:
 	var transport := _place_id.begins_with("__")
-	if Input.is_action_just_pressed("build_cancel"):
-		# Transport: cancel the placement. Machine: leave it in stock and close (you'll be
-		# prompted to place or scrap it next time you open the inventory).
+	if Input.is_action_just_pressed("build_cancel") or (not transport and Input.is_action_just_pressed("storage")):
+		# Transport: cancel the placement. Machine: it's still in storage, so just stop
+		# holding it (retrieve it again with [G]).
 		_place_mode = false
-		if transport:
-			_message = "Cancelled."
-		else:
-			close()
+		_message = "Cancelled." if transport else "Kept in storage — [G] to place it later."
 		return
 	_move_cursor()
 	if Input.is_action_just_pressed("reshuffle"):
@@ -505,7 +573,6 @@ func _scrap_held_machine() -> void:
 	RunState.add("tech_data", gained)
 	_place_mode = false
 	_message = "Scrapped %s → +%d tech data." % [_part_name(id), gained]
-	_place_next_stock_machine()
 
 
 ## Tech Data a machine is worth when scrapped — bigger/more complex machines are worth more.
@@ -564,7 +631,7 @@ func _try_place() -> void:
 		return
 	f.place_machine_layout(id, _cursor, _place_in_offsets, _place_out_offsets, _place_hold_offsets, _place_body_offsets)
 	_place_mode = false
-	_place_next_stock_machine()  # queue up the next machine to place, if any
+	# Back to browsing — retrieve the next from storage with [G] when you're ready.
 
 
 # --- shared actions ---
@@ -669,6 +736,9 @@ func _cancel_move_conv() -> void:
 func _handle_move_input() -> void:
 	var f := RunState.factory
 	_move_cursor()  # the whole machine follows the cursor
+	if Input.is_action_just_pressed("storage"):
+		_stash_moving_machine()  # [G] on a lifted machine → send it to storage
+		return
 	if Input.is_action_just_pressed("reshuffle"):
 		_scrap_moving_machine()  # [R] on a machine in hand → scrap it for tech data
 		return
@@ -695,6 +765,24 @@ func _scrap_moving_machine() -> void:
 	RunState.add("tech_data", gained)
 	_move_mode = false
 	_message = "Scrapped %s → +%d tech data." % [_part_name(did), gained]
+
+
+## Sends the machine currently lifted for a move into the storage list (off the grid) so you
+## can clear space and rearrange, then place it again later with [G].
+func _stash_moving_machine() -> void:
+	var f := RunState.factory
+	var did := String(f.machines[_move_mi].get("def_id", ""))
+	if did == "scrapper_arm":
+		_message = "The Scrapper Arm can't be stored."
+		return
+	var cs := f.cache_state(_move_mi)
+	if not cs.is_empty() and int(cs.get("count", 0)) > 0:
+		_message = "Empty the cache before storing it."
+		return
+	f.pickup_machine(_move_mi)  # remove from the grid
+	RunState.add_to_stock(did)
+	_move_mode = false
+	_message = "%s → storage.  [G] to place it again." % _part_name(did)
 
 
 ## Leveling is now instant and in place — no new slots, no relocation. Press [L] on a
@@ -967,7 +1055,9 @@ func _draw() -> void:
 	var rx := RPANEL_X + 12
 	var rw := RPANEL_W - 24
 	draw_line(Vector2(RPANEL_X, 24), Vector2(RPANEL_X, PANEL_SIZE.y - 20), Color(0.2, 0.2, 0.26), 1.0)
-	if _place_mode:
+	if _storage_mode:
+		_draw_storage_panel(rx, RPANEL_TOP, rw)
+	elif _place_mode:
 		_draw_part_info(rx, RPANEL_TOP, rw, _place_id, true)
 	elif _install_mode:
 		_draw_install_panel(rx, RPANEL_TOP, rw)
@@ -992,6 +1082,8 @@ func _draw() -> void:
 
 
 func _base_controls() -> String:
+	if _storage_mode:
+		return "[W/S] pick   [Space] place it   [G]/[Esc] back"
 	if _radial_mode:
 		return "[A/D] choose part   [Space] pick   [Esc] cancel"
 	if _place_mode:
@@ -999,13 +1091,14 @@ func _base_controls() -> String:
 			return "[WASD] move   [Space] place (2 cells)   [Esc] cancel"
 		if _place_id.begins_with("__"):
 			return "[WASD] move   [Space] place   [R] rotate   [Esc] cancel"
-		return "[WASD] move   [Space] drop   [R] scrap for tech data   [Esc] later"
+		return "[WASD] move   [Space] drop   [R] scrap   [G]/[Esc] storage"
 	if _move_mode:
-		return "[WASD] move   [Space] place   [R] scrap for tech data   [Esc] cancel"
+		return "[WASD] move   [Space] place   [G] store   [R] scrap   [Esc] cancel"
 	if _move_conv:
 		return "[WASD] move   [R] rotate   [Space] place   [Esc] cancel"
 	var combine_hint := "[C] combine" if _combine_a_core == Vector2i(-1, -1) else "[C] merge with marked"
-	return "[WASD] move   [Space] act/drop   [L] level   [M] move/lift   [B] transport   %s   [Esc] close" % combine_hint
+	var store_hint := "[G] storage (%d)" % _stock_total() if _has_unplaced() else "[G] storage"
+	return "[WASD] move  [Space] act  [L] level  [M] lift  [B] transport  %s  %s  [Esc] close" % [combine_hint, store_hint]
 
 
 # --- right-panel renderers ---
@@ -1133,7 +1226,30 @@ func _draw_move_panel(x: float, y: float, w: float) -> void:
 	draw_string(_font, Vector2(x, y + 42), "Fits here: %s" % ("yes" if fits else "no — move [WASD] to open space"), HORIZONTAL_ALIGNMENT_LEFT, w, 13, Color(0.6, 0.95, 0.6) if fits else Color(1, 0.6, 0.55))
 	draw_string(_font, Vector2(x, y + 70), "Keeps its level, modules and slots;", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.7, 0.72, 0.78))
 	draw_string(_font, Vector2(x, y + 86), "items in the way shift aside.", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.7, 0.72, 0.78))
-	draw_string(_font, Vector2(x, y + 114), "[WASD] move   [Space] place   [Esc] cancel", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.75, 0.75, 0.8))
+	draw_string(_font, Vector2(x, y + 114), "[WASD] move   [Space] place   [G] store   [Esc] cancel", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.75, 0.75, 0.8))
+
+
+## The temporary storage list ([G]). Machines wait here while you rearrange; the inventory
+## can't be closed until it's empty.
+func _draw_storage_panel(x: float, y: float, w: float) -> void:
+	draw_string(_font, Vector2(x, y + 14), "STORAGE", HORIZONTAL_ALIGNMENT_LEFT, w, 16, Color(0.95, 0.85, 0.5))
+	draw_string(_font, Vector2(x, y + 32), "Place all before closing the inventory.", HORIZONTAL_ALIGNMENT_LEFT, w, 11, Color(0.8, 0.8, 0.86))
+	var ids := _storage_ids()
+	if ids.is_empty():
+		draw_string(_font, Vector2(x, y + 58), "empty", HORIZONTAL_ALIGNMENT_LEFT, w, 13, Color(0.6, 0.6, 0.65))
+		return
+	var rows := 9
+	var top := clampi(_storage_index - rows / 2, 0, maxi(ids.size() - rows, 0))
+	var list_y := y + 48
+	for i in range(top, mini(top + rows, ids.size())):
+		var id: String = ids[i]
+		var ry := list_y + (i - top) * 24
+		if i == _storage_index:
+			draw_rect(Rect2(x - 2, ry - 2, w + 4, 22), Color(1, 1, 1, 0.12))
+		var tex := ContentLibrary.get_icon(_icon_of(id), Vector2i(16, 16), _color_of(id))
+		draw_texture_rect(tex, Rect2(x + 2, ry, 16, 16), false)
+		draw_string(_font, Vector2(x + 24, ry + 13), _part_name(id), HORIZONTAL_ALIGNMENT_LEFT, w - 66, 13, Color(0.92, 0.92, 0.96))
+		draw_string(_font, Vector2(x + w - 40, ry + 13), "x%d" % RunState.stock_count(id), HORIZONTAL_ALIGNMENT_LEFT, 40, 12, Color(0.6, 0.85, 0.6))
 
 
 func _icon_of(id: String) -> String:

@@ -174,7 +174,7 @@ func _handle_toggles() -> void:
 	# The factory panel is a full-screen modal that owns input while open.
 	if _factory.is_open():
 		if Input.is_action_just_pressed("toggle_inventory"):
-			_factory.close()
+			_factory.try_close()  # refused while machines are still in storage
 		return
 	if Input.is_action_just_pressed("toggle_inventory"):
 		_factory.open()
