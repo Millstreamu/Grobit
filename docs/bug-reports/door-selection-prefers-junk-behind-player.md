@@ -1,5 +1,9 @@
 # Bug: junk behind the player steals door interaction selection
 
+**Status:** Fixed. Interaction selection now prefers eligible objects in the
+player's forward half-plane before applying type priority and distance. The HUD
+uses the same target-selection helper as the highlight and input dispatcher.
+
 ## Summary
 
 When the player stands between a usable door and an in-range junk pile, the
@@ -98,5 +102,6 @@ highlight, and interaction action cannot diverge as their rules evolve.
 
 ## Validation note
 
-This investigation is based on the target-selection implementation and its
-existing regression test. No gameplay code was changed as part of this report.
+The `doorpickup_test` regression scene now covers both sides of the rule: a door
+in front beats junk behind the player, while a pickup in front can still beat a
+nearby door so an obstructed doorway can be cleared.

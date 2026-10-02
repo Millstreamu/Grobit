@@ -76,17 +76,30 @@ func _nearest_interactable() -> Node2D:
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	if player == null:
 		return null
+	return nearest_interactable(player, get_tree().get_nodes_in_group("interactables"))
+
+
+## Chooses one target for the highlight, prompt, and interaction action. Targets in
+## the half-plane the player faces beat targets behind them. Within the same half,
+## explicit interaction priority still wins, preserving pickup-over-door behavior
+## for items lying in a doorway.
+static func nearest_interactable(player: Node2D, interactables: Array[Node]) -> Node2D:
 	var best: Node2D
+	var best_is_forward := false
 	var best_priority := -INF
 	var best_distance := INF
-	for node: Node in get_tree().get_nodes_in_group("interactables"):
+	var forward := Vector2.UP.rotated(player.global_rotation)
+	for node: Node in interactables:
 		if not node is Node2D or not node.has_method("can_interact") or not node.can_interact():
 			continue
-		# Higher priority wins outright; doors sit low so a pickup on a doorway is
-		# still grabbable (otherwise the door hogs the selection and traps the item).
+		var offset := (node as Node2D).global_position - player.global_position
+		var is_forward := not offset.is_zero_approx() and forward.dot(offset) > 0.0
 		var priority := int(node.interact_priority()) if node.has_method("interact_priority") else 0
-		var distance := player.global_position.distance_to((node as Node2D).global_position)
-		if priority > best_priority or (priority == best_priority and distance < best_distance):
+		var distance := offset.length()
+		if best == null or is_forward and not best_is_forward \
+				or is_forward == best_is_forward and (priority > best_priority \
+				or priority == best_priority and distance < best_distance):
+			best_is_forward = is_forward
 			best_priority = priority
 			best_distance = distance
 			best = node
