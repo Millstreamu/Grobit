@@ -22,6 +22,14 @@ func _ready() -> void:
 	var exhausted: Variant = room.claim_random_prop_tile()
 	failures += _check(exhausted == null, "an exhausted room fails instead of using an unsafe fallback")
 
+	var clutter_room := Room.new()
+	clutter_room.rng.seed = 4321
+	clutter_room.interior_tiles.assign([Vector2(16, 48), Vector2(48, 48)])
+	var scrap_pile: Variant = clutter_room.claim_random_prop_tile()
+	var junk_pile: Variant = clutter_room.claim_random_prop_tile()
+	failures += _check(scrap_pile != junk_pile, "solid scrap and non-solid junk piles claim distinct tiles")
+	failures += _check(clutter_room.claim_random_prop_tile() == null, "all ground content shares the occupancy registry")
+
 	var generator := AreaGenerator.new()
 	generator.rooms.append(room)
 	failures += _check(generator.is_navigation_reserved(Vector2(16, 16)), "generator exposes reservations to build mode")
@@ -34,6 +42,7 @@ func _ready() -> void:
 	generator.rooms.clear()
 	generator.free()
 	room.free()
+	clutter_room.free()
 	get_tree().quit(failures)
 
 

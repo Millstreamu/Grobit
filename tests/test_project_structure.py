@@ -217,6 +217,15 @@ class ProjectStructureTests(unittest.TestCase):
         self.assertIn("func claim_nearest_prop_tile(world_position: Vector2) -> Variant:", room)
         self.assertIn("func claim_random_prop_tile() -> Variant:", room)
 
+        # Stationary ground content shares one atomic occupancy registry. Random
+        # interior points remain for moving/transient entities, not junk or loot.
+        self.assertIn("var position: Variant = claim_random_prop_tile()", room)
+        self.assertNotIn("pickup.global_position = _random_interior_point()", room)
+
+        self.assertGreaterEqual(generator.count("position = candidate.claim_random_prop_tile()"), 1)
+        self.assertIn("var position: Variant = room.claim_random_prop_tile()", generator)
+        self.assertNotIn("pickup.global_position = room._random_interior_point()", generator)
+
         controller = (ROOT / "scripts/world/run_controller.gd").read_text()
         self.assertIn("generator.claim_prop_tile(start_position + Vector2(-tile, tile))", controller)
         self.assertIn("generator.claim_prop_tile(generator.objective_room.center()", controller)

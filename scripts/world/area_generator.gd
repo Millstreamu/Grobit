@@ -140,14 +140,27 @@ func _spawn_guaranteed_chain(rng: RandomNumberGenerator) -> void:
 		var pick: Variant = pool[rng.randi_range(0, pool.size() - 1)]
 		var spec_id := String(pick.get("id", "")) if pick is Dictionary else String(pick)
 		RunState.run_chain[String(cat.get("category", "Machine"))] = spec_id
-		var room: Room = non_start[rng.randi_range(0, non_start.size() - 1)]
+		var first_room := rng.randi_range(0, non_start.size() - 1)
+		var room: Room = null
+		var position: Variant = null
+		# Try every room from a random starting point. The chain stays guaranteed when
+		# the initially selected room is full, without ever piling finds onto a used tile.
+		for offset in non_start.size():
+			var candidate: Room = non_start[(first_room + offset) % non_start.size()]
+			position = candidate.claim_random_prop_tile()
+			if position != null:
+				room = candidate
+				break
+		if room == null:
+			push_warning("No free generated-content tile for guaranteed %s" % String(cat.get("category", "Machine")))
+			continue
 		var pickup := MachinePickup.new()
 		pickup.broken = true
 		pickup.category = String(cat.get("category", "Machine"))
 		pickup.spec_pool = [spec_id]  # pre-decided: repair reveals exactly this
 		pickup.repair_cost = cat.get("repair_cost", {})
 		room.add_child(pickup)
-		pickup.global_position = room._random_interior_point()
+		pickup.global_position = position
 
 
 # ----------------------------------------------------------- regions ----
@@ -528,6 +541,9 @@ func _maybe_spawn_machine(room: Room) -> void:
 	for _i in per_room:
 		if room.rng.randf() >= chance:
 			continue
+		var position: Variant = room.claim_random_prop_tile()
+		if position == null:
+			continue
 		var cat: Dictionary = _weighted_category(categories, room.rng)
 		var pickup := MachinePickup.new()
 		pickup.broken = true
@@ -537,7 +553,7 @@ func _maybe_spawn_machine(room: Room) -> void:
 		pickup.spec_pool = [_pick_spec(cat.get("pool", []), room.rng)]
 		pickup.repair_cost = cat.get("repair_cost", {})
 		room.add_child(pickup)
-		pickup.global_position = room._random_interior_point()
+		pickup.global_position = position
 
 
 ## Picks a category by its `weight` (default 1). Ammo Makers carry a low weight so they
