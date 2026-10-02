@@ -391,10 +391,20 @@ func _render_tiles() -> void:
 		_doors_root.add_child(door)
 		var door_tile: Vector2i = doorway[2]
 		door.global_position = Vector2(door_tile) * tile + Vector2.ONE * tile * 0.5
-		rooms[doorway[0]].doors.append(door)
-		rooms[doorway[1]].doors.append(door)
+		for room_index_variant: Variant in [doorway[0], doorway[1]]:
+			var room_index := int(room_index_variant)
+			var room := rooms[room_index]
+			room.doors.append(door)
+			# The carved door is not an interior tile, but its floor landing is.
+			# Reserve every adjacent tile owned by this room so solid props cannot
+			# seal the one-tile passage.
+			for direction: Vector2i in DIRS:
+				var approach := door.global_position + Vector2(direction) * tile
+				if room.interior_tiles.has(approach):
+					room.reserve_navigation_tile(approach)
 	# Player starts in the middle of the start room.
 	start_position = rooms[0].center()
+	rooms[0].reserve_navigation_tile(rooms[0].nearest_interior_tile(start_position))
 
 
 func _add_floor(texture: Texture2D, world: Vector2) -> void:
@@ -447,6 +457,24 @@ func snap_to_tile(world_pos: Vector2, room: Room = null, exclude: Array = []) ->
 	if r == null:
 		return world_pos
 	return r.nearest_interior_tile(world_pos, exclude)
+
+
+## Claims a permanent-prop tile, defaulting to the start room. Returns `null`
+## instead of silently choosing an unsafe fallback when a room has no space.
+func claim_prop_tile(world_pos: Vector2, room: Room = null) -> Variant:
+	var target_room := room
+	if target_room == null and not rooms.is_empty():
+		target_room = rooms[0]
+	if target_room == null:
+		return null
+	return target_room.claim_nearest_prop_tile(world_pos)
+
+
+func is_navigation_reserved(world_pos: Vector2) -> bool:
+	for room: Room in rooms:
+		if room.is_navigation_reserved(world_pos):
+			return true
+	return false
 
 
 ## The room containing (or nearest to) a world position — the room that owns the
@@ -598,19 +626,25 @@ func _default_find_categories() -> Array:
 func _maybe_spawn_fabricator(room: Room) -> void:
 	if room.rng.randf() >= float(_machine_finds.get("fabricator_chance", 0.2)):
 		return
+	var position: Variant = room.claim_random_prop_tile()
+	if position == null:
+		return
 	var station := FabricatorStation.new()
 	room.add_child(station)
-	station.global_position = room._random_interior_point()
+	station.global_position = position
 
 
 func _add_repair_station(room: Room) -> void:
+	var position: Variant = room.claim_nearest_prop_tile(room.center())
+	if position == null:
+		return
 	var station := RepairStation.new()
 	station.cost = (_repair_config.get("cost", {}) as Dictionary).duplicate()
 	var rewards: Array = _repair_config.get("rewards", ["max_health"])
 	if not rewards.is_empty():
 		station.reward = String(rewards[room.rng.randi_range(0, rewards.size() - 1)])
 	room.add_child(station)
-	station.global_position = room.center()
+	station.global_position = position
 
 
 func _add_spawners(room: Room, config: Dictionary, _enemy_id: String) -> void:

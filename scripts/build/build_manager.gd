@@ -174,6 +174,11 @@ func _is_valid(pos: Vector2) -> bool:
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	if player == null or player.global_position.distance_to(pos) > build_range:
 		return false
+	var run := get_tree().get_first_node_in_group("run_controller")
+	if run != null:
+		var generator: AreaGenerator = run.get("generator")
+		if generator != null and generator.is_navigation_reserved(pos):
+			return false
 	var space := get_viewport().get_world_2d().direct_space_state
 	var query := PhysicsShapeQueryParameters2D.new()
 	var circle := CircleShape2D.new()

@@ -22,6 +22,12 @@ var cell_pixels := 0.0
 var tile_size := 32.0
 var map_position := Vector2.ZERO
 var doors: Array[Door] = []
+# Floor centres which must stay open for navigation (currently doorway landings),
+# plus floor centres already occupied by permanent solid props.  Keep these separate:
+# build-mode validation cares about navigation reservations, while generated props
+# must avoid both sets.
+var navigation_reserved: Dictionary = {}
+var claimed_prop_tiles: Dictionary = {}
 var enemy_min := 2
 var enemy_max := 4
 var enemy_id := "basic_enemy"
@@ -96,6 +102,47 @@ func nearest_interior_tile(world_pos: Vector2, exclude: Array = []) -> Vector2:
 			best = t
 			found = true
 	return best if found else interior_tiles[0]
+
+
+## Keeps a floor tile clear of permanent props. Door construction registers the
+## landing tile on each side of every passage before room population begins.
+func reserve_navigation_tile(world_position: Vector2) -> void:
+	navigation_reserved[world_position] = true
+
+
+func is_navigation_reserved(world_position: Vector2) -> bool:
+	return navigation_reserved.has(world_position)
+
+
+## Claims the safe prop tile nearest a preferred point. `null` means the room has
+## no unreserved/unoccupied tile; callers must skip the prop rather than fall back
+## to a doorway.
+func claim_nearest_prop_tile(world_position: Vector2) -> Variant:
+	var best: Variant = null
+	var best_distance := INF
+	for tile_center: Vector2 in interior_tiles:
+		if navigation_reserved.has(tile_center) or claimed_prop_tiles.has(tile_center):
+			continue
+		var distance := tile_center.distance_squared_to(world_position)
+		if distance < best_distance:
+			best_distance = distance
+			best = tile_center
+	if best != null:
+		claimed_prop_tiles[best] = true
+	return best
+
+
+## Claims a random safe tile without allowing two permanent props to overlap.
+func claim_random_prop_tile() -> Variant:
+	var available: Array[Vector2] = []
+	for tile_center: Vector2 in interior_tiles:
+		if not navigation_reserved.has(tile_center) and not claimed_prop_tiles.has(tile_center):
+			available.append(tile_center)
+	if available.is_empty():
+		return null
+	var chosen := available[rng.randi_range(0, available.size() - 1)]
+	claimed_prop_tiles[chosen] = true
+	return chosen
 
 
 func _physics_process(_delta: float) -> void:
@@ -173,10 +220,13 @@ func spawn_harvest(config: Dictionary) -> void:
 		var def: Dictionary = def_variant
 		var count := rng.randi_range(int(def.get("per_room_min", 1)), int(def.get("per_room_max", 3)))
 		for i in count:
+			var position: Variant = claim_random_prop_tile()
+			if position == null:
+				continue
 			var node := ScrapNode.new()
 			node.generate(def, rng)
 			add_child(node)
-			node.global_position = _random_interior_point()
+			node.global_position = position
 
 
 ## Places a persistent damage zone in the middle of a hazard room.

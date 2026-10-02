@@ -202,17 +202,28 @@ class ProjectStructureTests(unittest.TestCase):
         # One door tile carved per passage, one Door shared by both rooms.
         self.assertIn("_doorways.append([a, b, t])", generator)
         self.assertEqual(generator.count("var door := Door.new()"), 1)
-        self.assertIn("rooms[doorway[0]].doors.append(door)", generator)
-        self.assertIn("rooms[doorway[1]].doors.append(door)", generator)
+        self.assertIn("room.doors.append(door)", generator)
         self.assertIn(
             "door.global_position = Vector2(door_tile) * tile + Vector2.ONE * tile * 0.5",
             generator,
         )
+        self.assertIn("room.reserve_navigation_tile(approach)", generator)
+        self.assertIn("func claim_prop_tile(world_pos: Vector2, room: Room = null) -> Variant:", generator)
 
         room = (ROOT / "scripts/world/room.gd").read_text()
         self.assertIn("func _is_fully_inside(world_position: Vector2) -> bool:", room)
         self.assertIn("_pending_players.append(body)", room)
         self.assertIn("if _is_fully_inside(body.global_position):", room)
+        self.assertIn("func claim_nearest_prop_tile(world_position: Vector2) -> Variant:", room)
+        self.assertIn("func claim_random_prop_tile() -> Variant:", room)
+
+        controller = (ROOT / "scripts/world/run_controller.gd").read_text()
+        self.assertIn("generator.claim_prop_tile(start_position + Vector2(-tile, tile))", controller)
+        self.assertIn("generator.claim_prop_tile(generator.objective_room.center()", controller)
+
+        build_manager = (ROOT / "scripts/build/build_manager.gd").read_text()
+        self.assertIn("generator.is_navigation_reserved(pos)", build_manager)
+        self.assertTrue((ROOT / "scenes/test/door_clearance_test.tscn").is_file())
 
         studio = (ROOT / "tools/config-studio/index.html").read_text()
         # Tool mirrors the game: directional wall + one carved shared door tile.

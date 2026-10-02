@@ -1,8 +1,8 @@
 # Bug: solid room props can make a generated room inaccessible
 
-**Status:** Confirmed by code inspection. The Component Exchange is one affected
-prop, but the placement defect is shared by every solid `InteractableObject`
-placed on an unrestricted interior tile.
+**Status:** Fixed. Door construction now reserves each room's adjacent landing
+tiles, permanent solid props use a shared claim API which avoids reservations
+and earlier claims, and build mode rejects navigation-reserved tiles.
 
 ## Summary
 
@@ -151,3 +151,14 @@ content.
 - Player construction cannot occupy a navigation-reserved doorway approach.
 - Automated tests exercise both door orientations, constrained rooms, and a
   deterministic multi-seed generation sample.
+
+## Implementation note
+
+`Room` now owns separate navigation reservations and permanent-prop claims.
+Door rendering registers every adjacent interior landing before population;
+Scrap Nodes, Fabricators, Repair Stations, the Retrieval Pad, Component
+Exchange, and Objective Terminal all claim safe tiles and skip placement rather
+than falling back to an unsafe tile. `BuildManager` consults the same navigation
+reservation query. The `door_clearance_test` regression scene verifies reserved
+tiles are skipped, claims do not overlap, exhaustion fails safely, and the
+generator exposes reservations for build validation.
