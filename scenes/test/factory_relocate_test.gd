@@ -64,6 +64,34 @@ func _ready() -> void:
 	_check(fm.level_of(mv) == lvl, "move does NOT change level")
 	_check(fm.module_at(Vector2i(4, 5)) == "overclock", "module followed the moved slot")
 
+	# --- Scrapper Arm relocation moves its stateful typed holding cells ---
+	MetaState.machine_levels["scrapper_arm"] = 4
+	var fa := FactoryGrid.new(10, 4)
+	var arm := fa.place_scrapper_arm(Vector2i(0, 1))
+	_check(arm >= 0, "scrapper arm placed for relocation")
+	fa.get_cell(Vector2i(1, 1))["count"] = 3
+	fa.get_cell(Vector2i(2, 1))["count"] = 7
+	_check(not fa.can_relocate(arm, Vector2i(6, 1), fa.move_offsets(arm)), "arm move rejects holding cells outside the grid")
+	var blocker := fa.place_machine("smelter", Vector2i(7, 1))
+	_check(blocker >= 0, "blocking machine placed in proposed arm footprint")
+	_check(not fa.can_relocate(arm, Vector2i(5, 1), fa.move_offsets(arm)), "arm move rejects a blocked holding cell")
+	fa.pickup_machine(blocker)
+	_check(fa.can_relocate(arm, Vector2i(5, 1), fa.move_offsets(arm)), "arm can move when its full footprint is open")
+	fa.move_machine(arm, Vector2i(5, 1))
+	_check(fa.is_core(Vector2i(5, 1)), "arm core moved to new position")
+	var old_arm_clear := true
+	for x in 5:
+		if not fa.get_cell(Vector2i(x, 1)).is_empty():
+			old_arm_clear = false
+	_check(old_arm_clear, "old arm core and holding cells cleared")
+	_check(String(fa.get_cell(Vector2i(6, 1)).get("kind", "")) == "arm_slot", "new steel holding cell kept its kind")
+	_check(String(fa.get_cell(Vector2i(6, 1)).get("scrap", "")) == "steel_scrap", "new steel holding cell kept its type")
+	_check(int(fa.get_cell(Vector2i(6, 1)).get("count", 0)) == 3, "new steel holding cell kept its count")
+	_check(int(fa.get_cell(Vector2i(7, 1)).get("count", 0)) == 7, "new copper holding cell kept its count")
+	_check(fa.deposit_harvest("steel_scrap"), "harvest succeeds after moving the arm")
+	_check(int(fa.get_cell(Vector2i(6, 1)).get("count", 0)) == 4, "harvest increments only the moved holding cell")
+	MetaState.machine_levels = {}
+
 	# --- Build layout: ports are rolled per instance, connected to the core ---
 	var fb := FactoryGrid.new(6, 6)
 	var rng2 := RandomNumberGenerator.new()
