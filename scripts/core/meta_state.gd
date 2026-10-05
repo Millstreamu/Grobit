@@ -52,7 +52,7 @@ var machine_instances: Array = []
 ## endgame: other goblins come to the rescue). Components are also spent on arm upgrades, so
 ## every run is a choice: climb the ladder, or fix the lair. Persists.
 const LAIR_NEEDS := ["oxygen", "power", "water", "food"]
-const NEED_MAX := 5
+const NEED_MAX := 10   # components to fully satisfy one need — the main "length of the game" dial
 const NEED_COMPONENT := {
 	"reinforced_frame": "oxygen",   # steel frame — seals the lair
 	"power_coupling": "power",       # steel+copper — wiring
