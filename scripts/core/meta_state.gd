@@ -47,6 +47,59 @@ var machine_storage: Dictionary = {}
 var machine_instances: Array = []
 
 
+## The goblin lair's survival needs — the META GOAL. Each is filled by DELIVERING the matching
+## bridge component on extraction. Fill all four to NEED_MAX to ready the distress beacon (the
+## endgame: other goblins come to the rescue). Components are also spent on arm upgrades, so
+## every run is a choice: climb the ladder, or fix the lair. Persists.
+const LAIR_NEEDS := ["oxygen", "power", "water", "food"]
+const NEED_MAX := 5
+const NEED_COMPONENT := {
+	"reinforced_frame": "oxygen",   # steel frame — seals the lair
+	"power_coupling": "power",       # steel+copper — wiring
+	"control_assembly": "water",     # copper+plastic — filtration
+	"thermal_core": "food",          # copper+plastic — the grow-lamp core
+}
+var lair_needs: Dictionary = {}
+var beacon_sent := false            # the distress beacon has been sent — you're rescued (win)
+
+
+func need_amount(need: String) -> int:
+	return int(lair_needs.get(need, 0))
+
+
+## Delivers extracted components to their lair need (capped at NEED_MAX each). Returns a map of
+## {need: amount_added} for the run summary.
+func deliver_to_needs(items: Dictionary) -> Dictionary:
+	var added := {}
+	for id: String in items:
+		var need := String(NEED_COMPONENT.get(id, ""))
+		if need == "":
+			continue
+		var add := mini(int(items[id]), NEED_MAX - need_amount(need))
+		if add > 0:
+			lair_needs[need] = need_amount(need) + add
+			added[need] = int(added.get(need, 0)) + add
+	if not added.is_empty():
+		save_game()
+		changed.emit()
+	return added
+
+
+## True once every lair need is maxed — the lair is whole and the beacon can be sent.
+func lair_restored() -> bool:
+	for need: String in LAIR_NEEDS:
+		if need_amount(need) < NEED_MAX:
+			return false
+	return true
+
+
+## Fires the distress beacon (the win). One-way.
+func send_beacon() -> void:
+	beacon_sent = true
+	save_game()
+	changed.emit()
+
+
 ## The goblin lair's footprint — the grid-cell indices room 0 occupies (bottom-middle of
 ## the map). Frozen the first time a run generates and reused every run after, so the base
 ## room keeps the same size/shape (future meta upgrades edit this). `lair_grid` records the
@@ -334,6 +387,8 @@ func save_game() -> void:
 		"lair_grid": lair_grid,
 		"machine_storage": machine_storage,
 		"machine_instances": var_to_str(machine_instances),
+		"lair_needs": lair_needs,
+		"beacon_sent": beacon_sent,
 	}, "  "))
 
 
@@ -387,3 +442,8 @@ func load_game() -> void:
 		for rec: Variant in inst:
 			if rec is Dictionary:
 				machine_instances.append(rec)
+	lair_needs.clear()
+	var saved_needs: Dictionary = data.get("lair_needs", {})
+	for need: Variant in saved_needs:
+		lair_needs[String(need)] = int(saved_needs[need])
+	beacon_sent = bool(data.get("beacon_sent", false))

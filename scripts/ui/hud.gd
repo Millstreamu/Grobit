@@ -230,6 +230,7 @@ func _status_text() -> String:
 	var _ac := func(id: String) -> int: return _f.arm_slot_count(id) if _f != null else 0
 	lines.append("Arm scrap — Cu %d  St %d  Pl %d  Ce %d    Tech Data: %d" % [_ac.call("copper_scrap"), _ac.call("steel_scrap"), _ac.call("plastic_scrap"), _ac.call("ceramic_scrap"), RunState.currency_count("tech_data")])
 	lines.append("Resources: " + _resource_line())
+	lines.append("Lair: " + _lair_needs_line())
 	lines.append("Shooting is automatic.   [Space] use ability   [Tab] switch target   [F] interact")
 	lines.append("[I] factory (place/combine/scrap machines)   [F] interact/scrap   [P] run info")
 	for msg: Dictionary in _messages:
@@ -323,9 +324,22 @@ func _interaction_prompt() -> String:
 	return best.interaction_prompt() if best != null else ""
 
 
+## One-line lair-needs readout: "O2 2/5  Pwr 5/5  Wtr 0/5  Food 1/5" (or RESTORED).
+func _lair_needs_line() -> String:
+	if MetaState.beacon_sent:
+		return "RESTORED — distress beacon sent."
+	var parts: Array = []
+	for need: String in MetaState.LAIR_NEEDS:
+		parts.append("%s %d/%d" % [need.substr(0, 3).capitalize(), MetaState.need_amount(need), MetaState.NEED_MAX])
+	return "  ".join(parts)
+
+
 func _summary_text() -> String:
 	var lines: Array = []
 	match RunState.result:
+		RunState.RESULT_RESCUED:
+			lines.append("RESCUED! The lair is whole — the distress beacon is away.")
+			lines.append("Other goblins are coming for you. You made it home.")
 		RunState.RESULT_REPAIRED:
 			lines.append("AREA COMPLETE — Power Generator repaired!")
 		RunState.RESULT_EXTRACTED:
@@ -335,15 +349,21 @@ func _summary_text() -> String:
 		_:
 			lines.append("RUN LOST — no respawn beacon remained.")
 	lines.append("")
+	# Lair needs — the meta goal. Components delivered THIS run are flagged.
+	lines.append("Lair needs (deliver components to fix the lair):")
+	for need: String in MetaState.LAIR_NEEDS:
+		var got: int = int(RunState.needs_delivered.get(need, 0))
+		var flag := "   (+%d this run)" % got if got > 0 else ""
+		lines.append("  %s: %d / %d%s" % [need.capitalize(), MetaState.need_amount(need), MetaState.NEED_MAX, flag])
+	if not MetaState.beacon_sent:
+		lines.append("  Fill all four, then extract, to send the distress beacon.")
+	lines.append("")
 	lines.append("Resources this run:")
 	for id: String in RESOURCE_ORDER:
 		var qty := RunState.get_quantity(id)
 		if qty > 0:
 			lines.append("  %s: %d" % [GameData.resource_name(id), qty])
 	lines.append("")
-	if RunState.result == RunState.RESULT_SHIPPED and not RunState.last_run_unlocks.is_empty():
-		lines.append("NEW: unlocked %s" % ", ".join(RunState.last_run_unlocks))
-	lines.append("Delivered to Mars (all runs): %d" % MetaState.mars_total())
 	lines.append("Banked Tech Data: %d" % MetaState.tech_data)
 	var locked := _locked_tech_ids()
 	if locked.is_empty():

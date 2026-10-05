@@ -16,6 +16,7 @@ const RESULT_NONE := ""
 const RESULT_EXTRACTED := "extracted"
 const RESULT_REPAIRED := "repaired"
 const RESULT_SHIPPED := "shipped"
+const RESULT_RESCUED := "rescued"  # the lair was fully restored and the distress beacon sent — win
 const RESULT_LOST := "lost"
 
 ## Inventory-factory grid (see docs/INVENTORY_FACTORY_DIRECTION.md). Starts bare each run.
@@ -67,6 +68,9 @@ var driving := false
 
 ## Machine names newly unlocked by the shipment that ended this run (for the summary).
 var last_run_unlocks: Array = []
+
+## Lair needs filled by THIS run's extraction (need -> amount), for the end-of-run summary.
+var needs_delivered: Dictionary = {}
 
 ## The single active ability chosen for this run (Space triggers it), and the set
 ## of abilities the player may choose/switch to. Structured so mid-run unlocks can
@@ -150,6 +154,7 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 
 	# The generator fills run_chain when it spawns the guaranteed machines.
 	run_chain = {}
+	needs_delivered = {}
 
 	run_started.emit()
 

@@ -251,10 +251,16 @@ func _drive_out() -> void:
 		hud.log_message("You hop in the scrapbot and drive out into the ruins…")
 
 
-## Ends the run, banking the loaded cartridge toward the permanent Mars total.
+## Ends the run: banks the haul, and delivers any bridge components toward the lair's survival
+## needs. Filling all four needs fires the distress beacon — the rescue (win).
 func on_cartridge_shipped(items: Dictionary) -> void:
 	RunState.last_run_unlocks = MetaState.bank_delivery(items)
-	_end_run(RunState.RESULT_SHIPPED)
+	RunState.needs_delivered = MetaState.deliver_to_needs(items)
+	var result := RunState.RESULT_SHIPPED
+	if MetaState.lair_restored() and not MetaState.beacon_sent:
+		MetaState.send_beacon()
+		result = RunState.RESULT_RESCUED
+	_end_run(result)
 
 
 func _on_player_died() -> void:
@@ -309,6 +315,8 @@ func debug_reset_to_arm() -> void:
 	MetaState.save_factory(g)            # persist a factory that holds only the arm
 	MetaState.machine_storage.clear()    # empty the lair storage (transport/caches)
 	MetaState.machine_instances.clear()  # and the stored machine instances
+	MetaState.lair_needs.clear()         # reset the lair's survival needs + beacon
+	MetaState.beacon_sent = false
 	MetaState.save_game()
 	if hud != null:
 		hud.log_message("DEBUG: factory + storage reset to a bare Scrapper Arm.")
