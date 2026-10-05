@@ -26,24 +26,72 @@
     "harvest": {
       "_note": "TYPED scrap piles. Each is mostly its own material's scrap (fed to the matching recycler) with a little loose Junk mixed in. A room rolls 0-2 of each kind, so you find a varied spread of piles.",
       "nodes": [
-        { "label": "copper scrap", "sprite": "scrap_copper", "color": "b0632a",
-          "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
-          "pool": [ { "id": "copper_scrap", "weight": 5 } ] },
-        { "label": "steel scrap", "sprite": "scrap_steel", "color": "8f98a3",
-          "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
-          "pool": [ { "id": "steel_scrap", "weight": 5 } ] },
-        { "label": "plastic scrap", "sprite": "scrap_plastic", "color": "359186",
-          "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
-          "pool": [ { "id": "plastic_scrap", "weight": 5 } ] },
-        { "label": "ceramic scrap", "sprite": "scrap_ceramic", "color": "c4bba2",
-          "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
-          "pool": [ { "id": "ceramic_scrap", "weight": 5 } ] }
+        {
+          "label": "copper scrap",
+          "sprite": "scrap_copper",
+          "color": "b0632a",
+          "per_room_min": 0,
+          "per_room_max": 2,
+          "tokens_min": 4,
+          "tokens_max": 9,
+          "pool": [
+            {
+              "id": "copper_scrap",
+              "weight": 5
+            }
+          ]
+        },
+        {
+          "label": "steel scrap",
+          "sprite": "scrap_steel",
+          "color": "8f98a3",
+          "per_room_min": 0,
+          "per_room_max": 2,
+          "tokens_min": 4,
+          "tokens_max": 9,
+          "pool": [
+            {
+              "id": "steel_scrap",
+              "weight": 5
+            }
+          ]
+        },
+        {
+          "label": "plastic scrap",
+          "sprite": "scrap_plastic",
+          "color": "359186",
+          "per_room_min": 0,
+          "per_room_max": 2,
+          "tokens_min": 4,
+          "tokens_max": 9,
+          "pool": [
+            {
+              "id": "plastic_scrap",
+              "weight": 5
+            }
+          ]
+        },
+        {
+          "label": "ceramic scrap",
+          "sprite": "scrap_ceramic",
+          "color": "c4bba2",
+          "per_room_min": 0,
+          "per_room_max": 2,
+          "tokens_min": 4,
+          "tokens_max": 9,
+          "pool": [
+            {
+              "id": "ceramic_scrap",
+              "weight": 5
+            }
+          ]
+        }
       ]
     },
     "machine_finds": {
-      "_note": "Broken machines are common now — most rooms hold one or two. Repair cost stays general Junk (see _default_find_categories).",
-      "chance": 0.7,
-      "per_room_max": 2,
+      "_note": "Machines are SCARCE now: most rooms hold nothing, and only a Recycler is guaranteed per map. Ammo/Component makers, weapons and transport are lucky finds \u2014 so climbing a tier (which needs a component maker for the bridge part) takes a few runs. Repair costs scale by tier (see _repair_cost_for).",
+      "chance": 0.22,
+      "per_room_max": 1,
       "fabricator_chance": 0.2
     },
     "spawner": {
@@ -66,8 +114,18 @@
       ]
     },
     "salvage_loot": [
-      { "resource": "copper_scrap", "min": 3, "max": 6, "chance": 1.0 },
-      { "resource": "steel_scrap", "min": 2, "max": 4, "chance": 0.7 }
+      {
+        "resource": "copper_scrap",
+        "min": 3,
+        "max": 6,
+        "chance": 1.0
+      },
+      {
+        "resource": "steel_scrap",
+        "min": 2,
+        "max": 4,
+        "chance": 0.7
+      }
     ],
     "resource_drops": {
       "basic_enemy": [

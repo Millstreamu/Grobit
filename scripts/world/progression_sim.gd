@@ -20,7 +20,15 @@ const TD_PER_RUN := 4          # Tech Data earned per run (scrapping spare/dupli
 ## A run's realistic NET output toward the goal — the design intent is "bring back one progress
 ## thing per run": either an arm tier unlock, or one component delivered to a lair need.
 const DELIVER_PER_RUN := 1
-const MAX_RUNS := 80
+## Machines are SCARCE: a Component Maker (needed to craft a bridge/need component) is a lucky
+## find. You can't climb a tier or fill a need until you've FOUND its maker — this is what makes
+## the early game slow. Chance per run to find one more (random) component maker.
+const CM_FIND_CHANCE := 0.4
+const COMPONENT_MAKERS := ["frame_maker", "coupling_maker", "thermal_maker", "control_maker"]
+const MAX_RUNS := 120
+
+var _cm_owned := {}
+var _rng := RandomNumberGenerator.new()
 
 var _gen: AreaGenerator
 var fail := 0
@@ -29,6 +37,7 @@ var fail := 0
 func _ready() -> void:
 	_gen = AreaGenerator.new()
 	add_child(_gen)
+	_rng.seed = 20260205  # fixed so the simulated finds are reproducible
 	# Clean slate: arm L1 (steel only), nothing banked, lair empty.
 	MetaState.machine_levels = {}
 	MetaState.tech_data = 0
@@ -39,7 +48,8 @@ func _ready() -> void:
 
 	print("\n==================  GROBIT — PROGRESSION SIMULATION  ==================")
 	print("Start: Scrapper Arm Lv1 (steel only).  Goal: fill all 4 lair needs → beacon.")
-	print("Each run harvests %d scrap of every UNLOCKED tier; earns %d Tech Data.\n" % [HARVEST_PER_TIER, TD_PER_RUN])
+	print("Machines are scarce: you can't climb a tier until you FIND its component maker.")
+	print("Each run: harvest unlocked tiers, earn Tech Data, and bring back ONE progress thing.\n")
 
 	var run := 0
 	while not MetaState.beacon_sent and run < MAX_RUNS:
@@ -90,14 +100,26 @@ func _simulate_run(run: int) -> void:
 	# --- 2) Earn Tech Data (scrapping junk) ---
 	MetaState.tech_data += TD_PER_RUN
 
+	# --- 2b) Scarce machines: maybe find a Component Maker this run (gates crafting components) ---
+	if _cm_owned.size() < COMPONENT_MAKERS.size() and _rng.randf() < CM_FIND_CHANCE:
+		var missing: Array = []
+		for m: String in COMPONENT_MAKERS:
+			if not _cm_owned.has(m):
+				missing.append(m)
+		var found: String = missing[_rng.randi_range(0, missing.size() - 1)]
+		_cm_owned[found] = true
+		log_bits.append("found & repaired a %s → storage" % GameData.machines[found].get("name", found))
+
 	# A run accomplishes ONE main thing: climb a tier, or bring back one progress component.
 	var climbed := false
 
-	# --- 3) Climb: craft the next bridge component and level the arm if affordable ---
+	# --- 3) Climb: need the bridge component's MAKER, then Tech Data + the component ---
 	if lvl < 4:
 		var comp: String = BRIDGE[lvl + 1]
 		var td_cost := MetaState.machine_upgrade_cost("scrapper_arm")
-		if MetaState.tech_data >= td_cost and _craft(comp, mats):
+		if not _cm_owned.has(_maker_for(comp)):
+			log_bits.append("stuck at %s tier — need to find a %s to make a %s" % [_tier_name(lvl).to_upper(), _maker_name(comp), _short(comp)])
+		elif MetaState.tech_data >= td_cost and _craft(comp, mats):
 			MetaState.upgrade_machine("scrapper_arm")  # spends the Tech Data; +1 level
 			log_bits.append("TERMINAL: Arm Lv%d→Lv%d  (−1 %s, −%d TD)  ✦ %s UNLOCKED" % [lvl, lvl + 1, _short(comp), td_cost, _tier_name(lvl + 1).to_upper()])
 			climbed = true
@@ -119,7 +141,7 @@ func _simulate_run(run: int) -> void:
 		var count := 0
 		for comp_id: String in NEED_COMPONENT:
 			var need: String = NEED_COMPONENT[comp_id]
-			while count < DELIVER_PER_RUN and MetaState.need_amount(need) < MetaState.NEED_MAX and _craft(comp_id, mats):
+			while count < DELIVER_PER_RUN and _cm_owned.has(_maker_for(comp_id)) and MetaState.need_amount(need) < MetaState.NEED_MAX and _craft(comp_id, mats):
 				if MetaState.deliver_to_needs({comp_id: 1}).is_empty():
 					break
 				delivered[need] = int(delivered.get(need, 0)) + 1
@@ -163,6 +185,10 @@ func _maker_for(component: String) -> String:
 		"control_assembly": return "control_maker"
 		"thermal_core": return "thermal_maker"
 	return ""
+
+
+func _maker_name(component: String) -> String:
+	return String(GameData.machines.get(_maker_for(component), {}).get("name", _maker_for(component)))
 
 
 func _afford(cost: Dictionary, mats: Dictionary) -> bool:

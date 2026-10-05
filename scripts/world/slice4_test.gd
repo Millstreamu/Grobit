@@ -8,14 +8,16 @@ func _ready() -> void:
 	var gen := AreaGenerator.new(); add_child(gen)
 	gen.build(GameData.first_area_id(), 42)
 	await get_tree().process_frame
-	# 1. run_chain has one of each category
-	ck("Recycler" in RunState.run_chain and "Ammo Maker" in RunState.run_chain and "Component Maker" in RunState.run_chain, "run_chain has all 3 categories: %s" % str(RunState.run_chain))
-	# 2. a guaranteed broken machine of each category exists in the world
+	# 1. Only a RECYCLER is guaranteed now (machines are scarce; ammo/component makers are
+	#    lucky finds). The guaranteed chain records exactly that.
+	ck("Recycler" in RunState.run_chain, "run_chain guarantees a Recycler: %s" % str(RunState.run_chain))
+	ck(not ("Ammo Maker" in RunState.run_chain) and not ("Component Maker" in RunState.run_chain), "ammo/component makers are NOT guaranteed")
+	# 2. a guaranteed broken Recycler exists in the world
 	var cats := {}
 	for p in get_tree().get_nodes_in_group("pickups"):
 		if p is MachinePickup and p.broken:
 			cats[p.category] = true
-	ck(cats.has("Recycler") and cats.has("Ammo Maker") and cats.has("Component Maker"), "at least one broken machine of each category spawned")
+	ck(cats.has("Recycler"), "at least one broken Recycler spawned (guaranteed)")
 	# 3. the chain ids are valid machine defs with recipes
 	for k in RunState.run_chain:
 		var id = String(RunState.run_chain[k])

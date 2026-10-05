@@ -27,15 +27,22 @@ func _ready() -> void:
 	RunState.add("charge_cells", -1)  # what a shot does
 	ck(int(f.resource_counts().get("charge_cells", 0)) == before - 1, "firing consumes one ammo")
 	combat.queue_free()
-	# 4. broken ammo makers spawn in the world
-	var gen := AreaGenerator.new(); add_child(gen)
-	gen.build(GameData.first_area_id(), 321)
-	await get_tree().process_frame
-	var ammo_brokens := 0
-	for p in get_tree().get_nodes_in_group("pickups"):
-		if p is MachinePickup and p.broken and p.category == "Ammo Maker":
-			ammo_brokens += 1
-	ck(ammo_brokens > 0, "broken Ammo Makers spawn (%d)" % ammo_brokens)
+	# 4. broken Ammo Makers CAN spawn — they're a scarce, non-guaranteed find now (not every
+	#    map has one), so scan several seeds and assert they turn up in at least one.
+	var ammo_seen := false
+	for s in [321, 7, 99, 1234, 55, 808, 4040, 222]:
+		var gen := AreaGenerator.new(); add_child(gen)
+		gen.build(GameData.first_area_id(), s)
+		await get_tree().process_frame
+		for p in get_tree().get_nodes_in_group("pickups"):
+			if p is MachinePickup and p.broken and p.category == "Ammo Maker":
+				ammo_seen = true
+				break
+		gen.queue_free()
+		await get_tree().process_frame
+		if ammo_seen:
+			break
+	ck(ammo_seen, "broken Ammo Makers can spawn (scarce RNG find)")
 	if fail == 0: print("SLICE2_TEST: ALL PASS")
 	else: printerr("SLICE2_TEST: %d FAIL" % fail)
 	get_tree().quit(fail)

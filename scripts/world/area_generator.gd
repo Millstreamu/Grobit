@@ -919,6 +919,7 @@ func _default_find_categories() -> Array:
 		{
 			"category": "Ammo Maker",
 			"weight": 1,
+			"no_guarantee": true,  # scarce lucky find — only a Recycler is guaranteed per map
 			"repair_cost": {"copper": 3},
 			"pool": [
 				{"id": "copper_ammo_maker", "weight": 1},
@@ -929,7 +930,8 @@ func _default_find_categories() -> Array:
 		},
 		{
 			"category": "Component Maker",
-			"weight": 3,
+			"weight": 2,
+			"no_guarantee": true,  # scarce — finding a Component Maker is what gates climbing a tier
 			"repair_cost": {"copper": 4},
 			"pool": [
 				{"id": "coupling_maker", "weight": 1},
