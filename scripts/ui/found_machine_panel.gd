@@ -41,30 +41,35 @@ func _process(_delta: float) -> void:
 	if not visible:
 		return
 	if Engine.get_process_frames() != _opened_frame:
-		if Input.is_action_just_pressed("attack") or Input.is_action_just_pressed("confirm"):
-			_place_now()
-		elif Input.is_action_just_pressed("build_cancel"):
+		# Repaired gear always goes to storage now — you place it at your next run setup, not
+		# mid-run (the factory is locked in the field). Any key just dismisses the card.
+		if Input.is_action_just_pressed("attack") or Input.is_action_just_pressed("confirm") or Input.is_action_just_pressed("build_cancel"):
 			close()
 	queue_redraw()
-
-
-func _place_now() -> void:
-	var id := _id
-	close()
-	for hud: Node in get_tree().get_nodes_in_group("hud"):
-		if hud.has_method("open_place_machine"):
-			hud.open_place_machine(id)
-			return
 
 
 func _draw() -> void:
 	draw_rect(PANEL.grow(3), Color(0.5, 0.85, 1.0, 0.5))
 	draw_rect(PANEL, Color(0.07, 0.08, 0.12, 0.98))
 	var def: Dictionary = GameData.machines.get(_id, {})
-	draw_string(_font, PANEL.position + Vector2(14, 26), "MACHINE FOUND", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.6, 0.85, 1.0))
-	var tex := ContentLibrary.get_icon(String(def.get("icon", _id)), Vector2i(40, 40), String(def.get("color", "")))
+	draw_string(_font, PANEL.position + Vector2(14, 26), "REPAIRED", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.6, 0.85, 1.0))
+	var tex := ContentLibrary.get_icon(String(def.get("icon", _display_icon())), Vector2i(40, 40), String(def.get("color", "")))
 	draw_texture_rect(tex, Rect2(PANEL.position + Vector2(16, 44), Vector2(40, 40)), false)
-	draw_string(_font, PANEL.position + Vector2(66, 60), String(def.get("name", _id)), HORIZONTAL_ALIGNMENT_LEFT, PANEL.size.x - 74, 18, Color(0.95, 0.95, 0.98))
-	draw_string(_font, PANEL.position + Vector2(66, 82), "added to stock", HORIZONTAL_ALIGNMENT_LEFT, PANEL.size.x - 74, 12, Color(0.75, 0.8, 0.85))
-	draw_string(_font, PANEL.position + Vector2(14, PANEL.size.y - 32), "[Space] place it now", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.7, 1.0, 0.75))
-	draw_string(_font, PANEL.position + Vector2(14, PANEL.size.y - 12), "[Esc] keep in stock", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.75, 0.8))
+	draw_string(_font, PANEL.position + Vector2(66, 60), _display_name(), HORIZONTAL_ALIGNMENT_LEFT, PANEL.size.x - 74, 18, Color(0.95, 0.95, 0.98))
+	draw_string(_font, PANEL.position + Vector2(66, 82), "sent to storage", HORIZONTAL_ALIGNMENT_LEFT, PANEL.size.x - 74, 12, Color(0.75, 0.8, 0.85))
+	draw_string(_font, PANEL.position + Vector2(14, PANEL.size.y - 16), "Place it at your next run setup.   [Space]/[Esc] ok", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.75, 0.8))
+
+
+## Friendly label — transport ids ("__conveyor") aren't in GameData.machines.
+func _display_name() -> String:
+	match _id:
+		"__conveyor": return "Conveyor"
+		"__splitter": return "Splitter"
+		"__filter": return "Filter"
+	return String(GameData.machines.get(_id, {}).get("name", _id))
+
+
+func _display_icon() -> String:
+	if _id.begins_with("__"):
+		return "filter"  # a generic transport glyph until dedicated art exists
+	return _id

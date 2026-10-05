@@ -201,7 +201,9 @@ class ProjectStructureTests(unittest.TestCase):
         self.assertIn("if _room_of_tile(nx, ny) > r:", generator)
         # One door tile carved per passage, one Door shared by both rooms.
         self.assertIn("_doorways.append([a, b, t])", generator)
-        self.assertEqual(generator.count("var door := Door.new()"), 1)
+        # Two Door.new() sites, both one-per-passage: the lair's sealed exit (built with the
+        # lair up front) and the facility's interior passages (built when the run is rolled).
+        self.assertEqual(generator.count("var door := Door.new()"), 2)
         self.assertIn("room.doors.append(door)", generator)
         self.assertIn(
             "door.global_position = Vector2(door_tile) * tile + Vector2.ONE * tile * 0.5",
@@ -227,8 +229,11 @@ class ProjectStructureTests(unittest.TestCase):
         self.assertNotIn("pickup.global_position = room._random_interior_point()", generator)
 
         controller = (ROOT / "scripts/world/run_controller.gd").read_text()
-        self.assertIn("generator.claim_prop_tile(start_position + Vector2(-tile, tile))", controller)
-        self.assertIn("generator.claim_prop_tile(generator.objective_room.center()", controller)
+        # The scrapbot parks at the lair's exit; you drive out / extract via it.
+        self.assertIn("scrapbot.global_position = scrapbot_pos", controller)
+        self.assertIn("func on_scrapbot_interact", controller)
+        # Debug props still go through the shared occupancy registry.
+        self.assertIn("generator.claim_prop_tile(player.global_position + Vector2(32, 0))", controller)
 
         build_manager = (ROOT / "scripts/build/build_manager.gd").read_text()
         self.assertIn("generator.is_navigation_reserved(pos)", build_manager)

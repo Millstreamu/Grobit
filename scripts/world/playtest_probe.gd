@@ -11,7 +11,7 @@ func _ready() -> void:
 	var machines := {"Recycler": 0, "Ammo Maker": 0, "Component Maker": 0}
 	var fabricators := 0
 	var rooms_total := 0
-	var loose_junk := 0
+	var loose_scrap := 0
 	var guaranteed_match := 0
 	var mapwide_match := 0
 
@@ -37,8 +37,8 @@ func _ready() -> void:
 					var sid := String(e.get("id", "")) if e is Dictionary else String(e)
 					if sid == want_am:
 						found_my_am = true
-			elif ("amount" in p) and ("resource_id" in p) and p.resource_id == "junk":
-				loose_junk += int(p.amount)
+			elif ("amount" in p) and ("resource_id" in p) and p.resource_id == "copper_scrap":
+				loose_scrap += int(p.amount)
 		fabricators += get_tree().get_nodes_in_group("fabricators").size()
 
 		var chain_matches := String(RunState.run_chain.get("Ammo Maker", "")) == want_am
@@ -56,14 +56,14 @@ func _ready() -> void:
 	for k in machines:
 		print("  broken  %-14s %5.1f" % [k, float(machines[k]) / SEEDS])
 	print("  fabricators             %5.1f" % (float(fabricators) / SEEDS))
-	print("  loose junk on ground    %5.1f" % (float(loose_junk) / SEEDS))
+	print("  loose scrap on ground   %5.1f" % (float(loose_scrap) / SEEDS))
 
 	print("\n=== B) WEAPON VIABILITY ===")
 	print("  guaranteed-chain ammo maker matches weapon:  %d%%" % int(round(100.0 * guaranteed_match / SEEDS)))
 	print("  weapon feedable somewhere on the map:        %d%%  (a fixed-family Ammo Maker of your family exists)" % int(round(100.0 * mapwide_match / SEEDS)))
 
 	_chain_simulation()
-	_repair_note(float(loose_junk) / SEEDS)
+	_repair_note(float(loose_scrap) / SEEDS)
 	get_tree().quit()
 
 
@@ -97,5 +97,5 @@ func _chain_simulation() -> void:
 func _repair_note(avg_loose: float) -> void:
 	var need := 2 + 3 + 4  # Recycler + Ammo Maker + Component Maker repair costs
 	print("\n=== D) REPAIR ECONOMY ===")
-	print("  junk to repair one of each category: %d" % need)
-	print("  loose junk/run: %.1f  -> %s" % [avg_loose, "plenty" if avg_loose >= need * 2 else ("ok" if avg_loose >= need else "TIGHT")])
+	print("  materials to repair one of each category: %d" % need)
+	print("  loose scrap/run: %.1f  -> %s" % [avg_loose, "plenty" if avg_loose >= need * 2 else ("ok" if avg_loose >= need else "TIGHT")])

@@ -24,6 +24,110 @@ var machines_unlocked: Array[String] = []
 ## grows as you play). Base (unlocked) modules are always in the pool. Persists.
 var module_library: Array[String] = []
 
+## The player's PERSISTENT factory layout, carried between runs — `var_to_str` of
+## FactoryGrid.to_data(). Empty means "no factory yet" (first run starts bare). Stored as a
+## string because the layout contains Vector2i, which JSON can't represent.
+var factory_blob := ""
+
+## Permanent machine upgrades bought with banked tech_data (def_id -> level, default 1).
+## Every placed machine of that type benefits (faster processing + higher recipe gate), and
+## since the factory persists, so do the upgrades. Bought at a System Terminal.
+var machine_levels: Dictionary = {}
+const MAX_MACHINE_LEVEL := 5
+
+## Persistent transport/cache STORAGE (id -> count). Fungible parts (conveyors, splitters,
+## filters, caches) are found/crafted and stacked here (RunState.machine_stock links to it).
+var machine_storage: Dictionary = {}
+
+## Persistent MACHINE storage as per-instance records — each found machine keeps its OWN rolled
+## layout (port sides / body), so collecting duplicates of a type is worthwhile (different
+## layouts pack differently). Each record: {def_id, in_offsets, out_offsets, hold_offsets,
+## body_offsets}. RunState.machine_instances links to this list. Stored as a var_to_str blob
+## because the offsets are Vector2i (JSON can't represent them).
+var machine_instances: Array = []
+
+
+## The goblin lair's footprint — the grid-cell indices room 0 occupies (bottom-middle of
+## the map). Frozen the first time a run generates and reused every run after, so the base
+## room keeps the same size/shape (future meta upgrades edit this). `lair_grid` records the
+## [grid_w, grid_h] it was authored for, so a generation-size change re-seeds it.
+var lair_cells: Array = []
+var lair_grid: Array = []
+
+
+func has_lair() -> bool:
+	return not lair_cells.is_empty()
+
+
+## The saved lair footprint for a `w`×`h` cell grid, or [] if none is stored for that size.
+func load_lair_cells(w: int, h: int) -> Array:
+	if lair_cells.is_empty() or lair_grid != [w, h]:
+		return []
+	return lair_cells.duplicate()
+
+
+## Freezes the lair footprint so every future run rebuilds the same base room.
+func save_lair_cells(cells: Array, w: int, h: int) -> void:
+	lair_cells = cells.duplicate()
+	lair_grid = [w, h]
+	save_game()
+
+
+func machine_level(def_id: String) -> int:
+	return int(machine_levels.get(def_id, 1))
+
+
+func can_upgrade_machine(def_id: String) -> bool:
+	return machine_level(def_id) < MAX_MACHINE_LEVEL
+
+
+## Tech Data to take a machine type from its current level to the next.
+func machine_upgrade_cost(def_id: String) -> int:
+	return 3 * machine_level(def_id)  # 1→2: 3, 2→3: 6, 3→4: 9, 4→5: 12
+
+
+## Spends banked tech_data to raise a machine type's permanent level. Returns success.
+func upgrade_machine(def_id: String) -> bool:
+	if not can_upgrade_machine(def_id):
+		return false
+	var cost := machine_upgrade_cost(def_id)
+	if tech_data < cost:
+		return false
+	tech_data -= cost
+	machine_levels[def_id] = machine_level(def_id) + 1
+	save_game()
+	changed.emit()
+	return true
+
+
+func has_factory() -> bool:
+	return factory_blob != ""
+
+
+## Persists the current factory layout (called when a run ends).
+func save_factory(grid: FactoryGrid) -> void:
+	factory_blob = var_to_str(grid.to_data()) if grid != null else ""
+	save_game()
+
+
+## Rebuilds the persisted factory, or null if there isn't one.
+func load_factory() -> FactoryGrid:
+	if factory_blob == "":
+		return null
+	var data: Variant = str_to_var(factory_blob)
+	return FactoryGrid.from_data(data) if data is Dictionary else null
+
+
+## Persists the machine/transport storage (call after repairs or placements change it).
+func save_storage() -> void:
+	save_game()
+
+
+## Wipes the saved factory (used by the big-machine extraction and by starting over).
+func clear_factory() -> void:
+	factory_blob = ""
+	save_game()
+
 
 func _ready() -> void:
 	load_game()
@@ -224,6 +328,12 @@ func save_game() -> void:
 		"modules_owned": modules_owned,
 		"machines_unlocked": machines_unlocked,
 		"module_library": module_library,
+		"factory": factory_blob,
+		"machine_levels": machine_levels,
+		"lair_cells": lair_cells,
+		"lair_grid": lair_grid,
+		"machine_storage": machine_storage,
+		"machine_instances": var_to_str(machine_instances),
 	}, "  "))
 
 
@@ -256,3 +366,24 @@ func load_game() -> void:
 	module_library.clear()
 	for id: Variant in data.get("module_library", []):
 		module_library.append(String(id))
+	factory_blob = String(data.get("factory", ""))
+	machine_levels.clear()
+	var saved_levels: Dictionary = data.get("machine_levels", {})
+	for id: Variant in saved_levels:
+		machine_levels[String(id)] = int(saved_levels[id])
+	lair_cells.clear()
+	for c: Variant in data.get("lair_cells", []):
+		lair_cells.append(int(c))
+	lair_grid.clear()
+	for d: Variant in data.get("lair_grid", []):
+		lair_grid.append(int(d))
+	machine_storage.clear()
+	var saved_storage: Dictionary = data.get("machine_storage", {})
+	for id: Variant in saved_storage:
+		machine_storage[String(id)] = int(saved_storage[id])
+	machine_instances.clear()
+	var inst: Variant = str_to_var(String(data.get("machine_instances", "")))
+	if inst is Array:
+		for rec: Variant in inst:
+			if rec is Dictionary:
+				machine_instances.append(rec)

@@ -80,6 +80,9 @@ func _handle_input() -> void:
 ## Consumes every held component for credit, then grants a random machine for each full
 ## MACHINE_COST the credit reaches.
 func _sell_all() -> void:
+	if RunState.exchange_dormant():
+		_message = "The exchange is dormant — it's given all it can this run."
+		return
 	var sold := 0
 	var gained := 0
 	for id: String in COMPONENT_VALUES:
@@ -94,15 +97,19 @@ func _sell_all() -> void:
 		return
 	RunState.exchange_credit += gained
 	var granted: Array = []
-	while RunState.exchange_credit >= MACHINE_COST and not MACHINE_POOL.is_empty():
+	# Only grants up to the per-run cap, then goes dormant (meta can raise the cap).
+	while RunState.exchange_credit >= MACHINE_COST and not MACHINE_POOL.is_empty() and not RunState.exchange_dormant():
 		RunState.exchange_credit -= MACHINE_COST
 		var mid := String(MACHINE_POOL[_rng.randi_range(0, MACHINE_POOL.size() - 1)])
-		RunState.add_to_stock(mid)
+		RunState.add_machine_instance(mid)  # a rolled-layout instance, like a found machine
+		RunState.exchange_machines_granted += 1
 		granted.append(GameData.machines.get(mid, {}).get("name", mid))
 	_message = "Sold %d component%s (+%d credit)." % [sold, "" if sold == 1 else "s", gained]
 	if not granted.is_empty():
 		_message += "  Received: %s!" % ", ".join(granted)
 		_notify("Component Exchange: received %s (place it from your inventory)." % ", ".join(granted))
+		if RunState.exchange_dormant():
+			_message += "  (now dormant)"
 
 
 func _notify(text: String) -> void:

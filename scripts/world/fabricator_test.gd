@@ -6,22 +6,23 @@ func _ready() -> void:
 	RunState.factory = FactoryGrid.new(6, 6)
 	RunState.factory.place_machine("scrapper_arm", Vector2i(0, 0))
 	RunState.machine_stock = {}
-	RunState.add("junk", 6)
 	var fp := FabricatorPanel.new()
 	add_child(fp)
-	# craft a conveyor (1 junk) and a filter (3 junk)
+	# Transport parts are free to craft now (inserts/transport cost nothing).
 	fp._cursor = 0
 	fp._craft()
-	fails += _ck(RunState.stock_count("__conveyor") == 1, "crafting a conveyor adds it to stock")
-	fails += _ck(RunState.get_quantity("junk") == 5, "conveyor spent 1 junk from the factory")
-	fp._cursor = 2  # filter
+	fails += _ck(RunState.stock_count("__conveyor") == 1, "crafting a free conveyor adds it to stock")
+	fp._cursor = 2  # filter — also free
 	fp._craft()
-	fails += _ck(RunState.stock_count("__filter") == 1 and RunState.get_quantity("junk") == 2, "filter crafted, junk spent")
-	# can't afford: drain junk, try a cache (3 junk)
-	RunState.add("junk", -RunState.get_quantity("junk"))
+	fails += _ck(RunState.stock_count("__filter") == 1, "crafting a free filter adds it to stock")
+	# A storage cache costs refined copper (3).
+	RunState.add("copper", 3)  # into the grid
 	fp._cursor = 3  # storage cache
 	fp._craft()
-	fails += _ck(RunState.stock_count("storage_cache") == 0, "can't craft a cache with no resources")
+	fails += _ck(RunState.stock_count("storage_cache") == 1 and RunState.get_quantity("copper") == 0, "cache crafted, copper spent")
+	# Can't craft another cache with no copper left.
+	fp._craft()
+	fails += _ck(RunState.stock_count("storage_cache") == 1, "can't craft a cache with no resources")
 	if fails == 0: print("FABRICATOR_TEST: ALL PASS")
 	else: printerr("FABRICATOR_TEST: %d FAIL" % fails)
 	get_tree().quit(fails)

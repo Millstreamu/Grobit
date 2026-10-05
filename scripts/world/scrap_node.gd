@@ -1,11 +1,11 @@
 class_name ScrapNode
 extends InteractableObject
 ## A harvestable scrap pile. HOLD [F] while next to it: a progress bar fills, and each
-## time it completes you pull one piece of Junk into the Scrapper Arm's holding cells.
-## The pile has `tokens` charges (one per Junk) and is removed when emptied. Solid +
+## time it completes you pull one piece of typed scrap into the Scrapper Arm's holding cells.
+## The pile has `tokens` charges (one per piece) and is removed when emptied. Solid +
 ## grid-locked. (The old slot/rust minigame has been retired.)
 
-## Seconds of holding to pull one piece of junk.
+## Seconds of holding to pull one piece of scrap.
 const HARVEST_SECONDS := 0.8
 
 var tokens := 6
@@ -14,7 +14,7 @@ var node_sprite := "scrap_node"
 var node_color := "8a7f6d"
 
 var rng := RandomNumberGenerator.new()
-var _pool: Array = []       # weighted item pool (now just junk); defaults to "junk"
+var _pool: Array = []       # weighted item pool of typed scrap; defaults to "copper_scrap"
 var _progress := 0.0
 
 
@@ -48,14 +48,30 @@ func is_spent() -> bool:
 
 
 func interaction_prompt() -> String:
+	if _is_locked():
+		return "Scrapper Arm can't hold %s yet — upgrade the arm to unlock it" % GameData.resource_name(_primary_scrap())
 	return "Hold [F] to scrap %s  (%d left)" % [harvest_label, tokens]
 
 
+## The pile's main scrap type (its first pool entry), for the tier-lock check and prompt.
+func _primary_scrap() -> String:
+	return String(_pool[0].get("id", "")) if not _pool.is_empty() else ""
+
+
+## True when this is a scrap pile of a tier the Scrapper Arm can't hold yet — it spawns and is
+## visible (a teaser), but can't be harvested until the arm is upgraded to that tier.
+func _is_locked() -> bool:
+	var id := _primary_scrap()
+	if not RunState.ARM_SCRAP_TYPES.has(id):
+		return false  # non-scrap piles are always harvestable
+	return RunState.factory == null or not RunState.factory.arm_accepts(id)
+
+
 ## Driven by SelectionManager while [F] is held and this is the selected pile. Fills a
-## progress bar; each completion deposits one item (typed scrap → the Scrapper Arm bar,
-## general junk → the factory grid), until the pile is dry.
+## progress bar; each completion deposits one piece of typed scrap into the Scrapper Arm,
+## until the pile is dry. A pile of a locked tier can't be harvested at all.
 func hold_interact(delta: float) -> void:
-	if tokens <= 0:
+	if tokens <= 0 or _is_locked():
 		return
 	_progress += delta
 	if _progress >= HARVEST_SECONDS:
@@ -72,16 +88,13 @@ func hold_interact(delta: float) -> void:
 	queue_redraw()
 
 
-## Routes a harvested item to its home: the four scrap types stack in the Scrapper Arm
-## bar; anything else (general junk) goes into the factory grid as before.
+## Routes a harvested item to its home: the four typed scraps stack in the Scrapper Arm bar,
+## a currency goes to the top bar, and anything else needs a free factory-grid cell.
 func _deposit(item: String) -> bool:
-	if RunState.ARM_SCRAP_TYPES.has(item):
-		return RunState.arm_add(item, 1) > 0
-	if item in RunState.BAR_CURRENCIES:
-		return RunState.add(item, 1) > 0  # junk → top-bar currency (no grid cell needed)
-	if RunState.factory == null or not RunState.has_space():
+	var off_grid := item in RunState.ARM_SCRAP_TYPES or item in RunState.BAR_CURRENCIES
+	if not off_grid and (RunState.factory == null or not RunState.has_space()):
 		return false
-	return RunState.add(item, 1) > 0
+	return RunState.deposit(item, 1) > 0
 
 
 ## Releasing [F] resets the in-progress fill (each piece needs a continuous hold).
@@ -104,7 +117,7 @@ func _draw() -> void:
 
 func _roll_item() -> String:
 	if _pool.is_empty():
-		return "junk"
+		return "copper_scrap"
 	var total := 0.0
 	for entry: Dictionary in _pool:
 		total += float(entry.get("weight", 1))
@@ -112,8 +125,8 @@ func _roll_item() -> String:
 	for entry: Dictionary in _pool:
 		pick -= float(entry.get("weight", 1))
 		if pick <= 0.0:
-			return String(entry.get("id", "junk"))
-	return String(_pool[_pool.size() - 1].get("id", "junk"))
+			return String(entry.get("id", "copper_scrap"))
+	return String(_pool[_pool.size() - 1].get("id", "copper_scrap"))
 
 
 func _notify(text: String) -> void:

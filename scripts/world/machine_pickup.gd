@@ -58,7 +58,7 @@ func interaction_prompt() -> String:
 	if broken:
 		var cost := "" if repair_cost.is_empty() else "  (%s)" % _cost_text(repair_cost)
 		# Fixed specialisation: the pile already knows what it'll become, so name it (you
-		# decide whether it's worth repairing BEFORE you spend the junk).
+		# decide whether it's worth repairing BEFORE you spend the materials).
 		var fixed := _fixed_spec()
 		if fixed != "":
 			return "[F] Repair broken %s%s" % [_name(fixed), cost]
@@ -92,9 +92,13 @@ func _repair() -> void:
 	_grant(id)
 
 
-## Adds a machine to stock and shows the reveal card (then queue_free).
+## Adds a repaired machine to storage (as a per-instance record with its own rolled layout, so
+## duplicates are worth collecting) and shows the reveal card. Transport parts stay fungible.
 func _grant(id: String) -> void:
-	RunState.add_to_stock(id)
+	if id.begins_with("__"):
+		RunState.add_to_stock(id)            # conveyors/splitters/filters are fungible counts
+	else:
+		RunState.add_machine_instance(id)    # machines keep a unique rolled layout
 	queue_free()
 	for hud: Node in get_tree().get_nodes_in_group("hud"):
 		if hud.has_method("open_found_machine"):
@@ -118,6 +122,10 @@ func _roll_spec() -> String:
 
 
 func _name(id: String) -> String:
+	match id:
+		"__conveyor": return "Conveyor"
+		"__splitter": return "Splitter"
+		"__filter": return "Filter"
 	return String(GameData.machines.get(id, {}).get("name", id))
 
 

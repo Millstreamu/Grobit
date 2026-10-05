@@ -10,7 +10,9 @@ func _ready() -> void:
 	RunState.factory = FactoryGrid.new(8, 8)
 	RunState.factory.place_machine("scrapper_arm", Vector2i(0, 0))
 	RunState.exchange_credit = 0
+	RunState.exchange_machines_granted = 0
 	RunState.machine_stock = {}
+	RunState.machine_instances = []
 
 	var panel := ExchangePanel.new()
 	add_child(panel)
@@ -19,27 +21,28 @@ func _ready() -> void:
 	panel._sell_all()
 	_ck(RunState.exchange_credit == 0 and _stock_total() == 0, "selling empty-handed grants nothing")
 
-	# Exactly one machine's worth of components → one machine, credit back to zero.
-	RunState.add("power_coupling", 2)
-	RunState.add("thermal_core", 1)  # 3 components, 3 credit, = MACHINE_COST
+	# Partial sale banks credit without granting yet.
+	RunState.add("power_coupling", 2)  # 2 credit < MACHINE_COST
 	panel._sell_all()
-	_ck(RunState.get_quantity("power_coupling") == 0 and RunState.get_quantity("thermal_core") == 0, "sold components are consumed")
-	_ck(_stock_total() == 1, "a full credit bar grants one machine")
-	_ck(RunState.exchange_credit == 0, "credit resets after granting a machine")
-	_ck(_granted_is_from_pool(), "the granted machine is a production machine")
+	_ck(RunState.exchange_credit == 2 and _stock_total() == 0, "a partial sale banks credit, no machine yet")
 
-	# Partial sale banks credit without granting yet; a later sale tops it up.
-	RunState.add("reinforced_frame", 2)  # 2 credit < MACHINE_COST
+	# Topping past the cost grants one machine; the exchange then goes dormant (cap 1).
+	RunState.add("power_coupling", 2)  # +2 → 4 credit → one machine, 1 left over
 	panel._sell_all()
-	_ck(RunState.exchange_credit == 2 and _stock_total() == 1, "a partial sale banks credit, no machine yet")
-	RunState.add("control_assembly", 2)  # +2 credit -> 4 total -> one machine, 1 left over
-	panel._sell_all()
-	_ck(_stock_total() == 2, "credit carries over and the next sale grants a machine")
+	_ck(_stock_total() == 1, "crossing the cost grants one machine")
 	_ck(RunState.exchange_credit == 1, "leftover credit above the cost stays banked")
+	_ck(_granted_is_from_pool(), "the granted machine is a production machine")
+	_ck(RunState.exchange_dormant(), "the exchange goes dormant after its one machine")
 
-	# Credit is per-run: a fresh run clears it.
+	# Dormant: further sales grant nothing and don't even consume your components.
+	RunState.add("thermal_core", 4)
+	var before := RunState.get_quantity("thermal_core")
+	panel._sell_all()
+	_ck(_stock_total() == 1 and RunState.get_quantity("thermal_core") == before, "a dormant exchange grants nothing and keeps your components")
+
+	# Credit and dormancy are per-run: a fresh run clears them.
 	RunState.begin_run(GameData.first_area_id(), 1)
-	_ck(RunState.exchange_credit == 0, "a new run clears exchange credit")
+	_ck(RunState.exchange_credit == 0 and not RunState.exchange_dormant(), "a new run clears exchange credit and dormancy")
 
 	if fail == 0:
 		print("EXCHANGE_TEST: ALL PASS")
@@ -49,15 +52,12 @@ func _ready() -> void:
 
 
 func _stock_total() -> int:
-	var n := 0
-	for id: String in RunState.machine_stock:
-		n += int(RunState.machine_stock[id])
-	return n
+	return RunState.instance_count()
 
 
 func _granted_is_from_pool() -> bool:
-	for id: String in RunState.machine_stock:
-		if not ExchangePanel.MACHINE_POOL.has(id):
+	for inst: Dictionary in RunState.machine_instances:
+		if not ExchangePanel.MACHINE_POOL.has(String(inst.get("def_id", ""))):
 			return false
 	return true
 

@@ -16,8 +16,8 @@
     { "_comment": "Component Makers combine TWO base materials into a component. Different makers/material pairs than the ammo makers -> machine type decides the output. Prototype set; extend freely.",
       "machine": "coupling_maker", "needs": { "copper": 1, "steel": 1 }, "produces": { "power_coupling": 1 }, "seconds": 3.0 },
     { "machine": "control_maker", "needs": { "copper": 1, "plastic": 1 }, "produces": { "control_assembly": 1 }, "seconds": 3.0 },
-    { "machine": "frame_maker", "needs": { "steel": 1, "ceramic": 1 }, "produces": { "reinforced_frame": 1 }, "seconds": 3.0 },
-    { "machine": "thermal_maker", "needs": { "plastic": 1, "ceramic": 1 }, "produces": { "thermal_core": 1 }, "seconds": 3.0 },
+    { "machine": "frame_maker", "needs": { "steel": 2 }, "produces": { "reinforced_frame": 1 }, "seconds": 3.0 },
+    { "machine": "thermal_maker", "needs": { "copper": 1, "plastic": 1 }, "produces": { "thermal_core": 1 }, "seconds": 3.0 },
 
     { "machine": "scrap_recycler", "needs": { "bent_panel": 1 }, "produces": { "scrap_metal": 2 }, "seconds": 2.0 },
     { "machine": "scrap_recycler", "needs": { "cable_bundle": 1 }, "produces": { "copper_wire": 1, "polymer": 1 }, "seconds": 2.0 },

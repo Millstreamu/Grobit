@@ -1,0 +1,4 @@
+[gd_scene load_steps=2 format=3 uid="uid://b7metaupgrade01"]
+[ext_resource type="Script" path="res://scripts/world/meta_upgrade_test.gd" id="1"]
+[node name="MetaUpgradeTest" type="Node"]
+script = ExtResource("1")

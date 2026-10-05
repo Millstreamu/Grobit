@@ -35,16 +35,15 @@ func _ready() -> void:
 	failures += _check(g.place_machine("smelter", Vector2i(2, 1)) == -1, "reject placing on an existing core")
 	failures += _check(g.place_machine("smelter", Vector2i(0, 0)) == -1, "reject when input cell is off-grid")
 
-	# Adjacency auto-chain: arm output cell shared as smelter input cell.
+	# Adjacency chain: scrap placed in a machine's input cell flows through to its output.
 	var g2 := FactoryGrid.new(6, 3)
-	var arm := g2.place_machine("scrapper_arm", Vector2i(0, 0))  # output at (1,0)
 	var sm := g2.place_machine("smelter", Vector2i(2, 0))         # input (1,0), output (3,0)
-	failures += _check(arm >= 0 and sm >= 0, "arm + smelter placed adjacent")
-	failures += _check(g2.output_position(g2.machines[arm]) == g2.input_positions(g2.machines[sm])[0], "arm output == smelter input (shared cell)")
+	failures += _check(sm >= 0, "smelter placed")
+	failures += _check(g2.input_positions(g2.machines[sm])[0] == Vector2i(1, 0), "smelter input is the shared cell (1,0)")
 	g2.set_cell(Vector2i(1, 0), {"kind": "resource", "id": "scrap_metal"})
 	for _i in 10:
 		g2.tick(0.5)
-	failures += _check(_id_at(g2, Vector2i(3, 0)) == "metal_bar", "adjacency: item flowed arm→smelter→output")
+	failures += _check(_id_at(g2, Vector2i(3, 0)) == "metal_bar", "item flowed through the smelter to its output")
 
 	if failures == 0:
 		print("FACTORY_TEST: ALL PASS")

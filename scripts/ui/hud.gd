@@ -5,7 +5,7 @@ extends CanvasLayer
 ## interaction prompts, a short message log, and the end-of-run summary with
 ## permanent tech unlocks. Intentionally utilitarian — readability over polish.
 
-const RESOURCE_ORDER := ["junk", "copper_scrap", "steel_scrap", "plastic_scrap", "ceramic_scrap", "copper", "steel", "plastic", "ceramic", "charge_cells", "steel_slugs", "resin_capsules", "ceramic_charges", "power_coupling", "control_assembly", "reinforced_frame", "thermal_core", "tech_data"]
+const RESOURCE_ORDER := ["copper_scrap", "steel_scrap", "plastic_scrap", "ceramic_scrap", "copper", "steel", "plastic", "ceramic", "charge_cells", "steel_slugs", "resin_capsules", "ceramic_charges", "power_coupling", "control_assembly", "reinforced_frame", "thermal_core", "tech_data"]
 
 var _player: GrobitPlayer
 var _combat: PlayerCombat
@@ -23,6 +23,7 @@ var _factory: FactoryPanel
 var _cartridge: CartridgePanel
 var _decode: DecodePanel
 var _exchange: ExchangePanel
+var _terminal: TerminalPanel
 var _fabricator: FabricatorPanel
 var _found: FoundMachinePanel
 var _run_info: RunInfoPanel
@@ -45,17 +46,16 @@ func setup(player: GrobitPlayer, build: BuildManager, generator: AreaGenerator) 
 	if _player.health != null:
 		_player.health.health_changed.connect(_on_health_changed)
 		_on_health_changed(_player.health.health, _player.health.max_health)
-	# Choose the run's active ability up front if one isn't equipped yet.
-	if RunState.equipped_ability.is_empty():
-		if OS.has_environment("GROBIT_DEBUG_ABILITY"):  # skip the modal in headless tests
-			var aid := OS.get_environment("GROBIT_DEBUG_ABILITY")
-			if not GameData.abilities.has(aid) and not RunState.available_abilities.is_empty():
-				aid = RunState.available_abilities[0]
-			RunState.equipped_ability = aid
-			if not aid.is_empty():
-				_abilities.equip(aid)
-		else:
-			_ability_choice.open()
+	# No ability chooser at game start any more — you begin in the lair as the goblin. Picking a
+	# run powerup will happen when you commit to a run (hop in the scrapbot); that's a placeholder
+	# for now (see RunController._drive_out). A debug env var can still force one for headless tests.
+	if RunState.equipped_ability.is_empty() and OS.has_environment("GROBIT_DEBUG_ABILITY"):
+		var aid := OS.get_environment("GROBIT_DEBUG_ABILITY")
+		if not GameData.abilities.has(aid) and not RunState.available_abilities.is_empty():
+			aid = RunState.available_abilities[0]
+		RunState.equipped_ability = aid
+		if not aid.is_empty():
+			_abilities.equip(aid)
 
 
 var _last_overflow_msec := 0
@@ -82,13 +82,18 @@ func _process(_delta: float) -> void:
 		return
 	if Input.is_action_just_pressed("toggle_debug"):
 		_status.visible = not _status.visible  # [`] shows/hides the debug readout
+	if Input.is_action_just_pressed("debug_reset"):  # [F9] wipe factory + storage to a bare arm
+		for rc: Node in get_tree().get_nodes_in_group("run_controller"):
+			if rc.has_method("debug_reset_to_arm"):
+				rc.debug_reset_to_arm()
+				return
 	if _status.visible:
 		_status.text = _status_text()
 	_prompt.text = _interaction_prompt()
 	if _summary_panel.visible:
 		_summary_label.text = _summary_text()
 	if _minimap != null:
-		_minimap.visible = not (_factory.is_open() or _cartridge.is_open() or _decode.is_open() or _exchange.is_open() or _fabricator.is_open() or _found.is_open() or _run_info.is_open() or _ability_choice.is_open())
+		_minimap.visible = not (_factory.is_open() or _cartridge.is_open() or _decode.is_open() or _exchange.is_open() or _terminal.is_open() or _fabricator.is_open() or _found.is_open() or _run_info.is_open() or _ability_choice.is_open())
 	_handle_toggles()
 
 
@@ -105,6 +110,12 @@ func open_cartridge() -> void:
 		_cartridge.open()
 
 
+## Opens the factory loadout for run setup (called by the scrapbot in the lair).
+func open_factory() -> void:
+	if _factory != null and not _factory.is_open():
+		_factory.open()
+
+
 ## Opens the module decode draft (called by DecodeStation.interact()).
 func open_decode(cost: Dictionary) -> void:
 	if _decode != null:
@@ -115,6 +126,12 @@ func open_decode(cost: Dictionary) -> void:
 func open_exchange() -> void:
 	if _exchange != null:
 		_exchange.open()
+
+
+## Opens the system terminal (called by SystemTerminal.interact()).
+func open_terminal() -> void:
+	if _terminal != null:
+		_terminal.open()
 
 
 func open_fabricator() -> void:
@@ -151,6 +168,8 @@ func _handle_toggles() -> void:
 		return  # the decode draft owns input while open
 	if _exchange.is_open():
 		return  # the component exchange owns input while open
+	if _terminal.is_open():
+		return  # the system terminal owns input while open
 	if _fabricator.is_open():
 		return  # the Fabricator crafting menu owns input while open
 	if _found.is_open():
@@ -207,7 +226,9 @@ func _status_text() -> String:
 	lines.append("Ability:  " + _ability_text())
 	lines.append("Weapon:  " + _weapon_text())
 	lines.append("Goal:  " + _goal_text())
-	lines.append("Scrap: %d    Tech Data: %d" % [RunState.currency_count("junk"), RunState.currency_count("tech_data")])
+	var _f := RunState.factory
+	var _ac := func(id: String) -> int: return _f.arm_slot_count(id) if _f != null else 0
+	lines.append("Arm scrap — Cu %d  St %d  Pl %d  Ce %d    Tech Data: %d" % [_ac.call("copper_scrap"), _ac.call("steel_scrap"), _ac.call("plastic_scrap"), _ac.call("ceramic_scrap"), RunState.currency_count("tech_data")])
 	lines.append("Resources: " + _resource_line())
 	lines.append("Shooting is automatic.   [Space] use ability   [Tab] switch target   [F] interact")
 	lines.append("[I] factory (place/combine/scrap machines)   [F] interact/scrap   [P] run info")
@@ -268,28 +289,22 @@ func _goal_text() -> String:
 	if hint != "":
 		parts.append("next: " + hint)
 	parts.append("Mars %d" % MetaState.mars_total())
-	parts.append("ship at pad" if RunState.shipping_unlocked else "do objective, then ship")
+	parts.append("head back to the start to extract")
 	return "   •   ".join(parts)
 
 
-# Contextual next-action for a new player, based on how far they've gotten.
+# Rough onboarding for a brand-new player (first run, nothing banked yet).
 func _tip_text() -> String:
-	if RunState.shipping_unlocked:
-		return "shipping is on — return to the Retrieval Pad and press [F] to ship home"
-	const JUNK := {"bent_panel": true, "cable_bundle": true, "burnt_board": true, "broken_motor": true}
-	var counts := RunState.factory.resource_counts() if RunState.factory != null else {}
-	var has_junk := false
-	var has_material := false
-	for id: String in counts:
-		if JUNK.has(id):
-			has_junk = true
-		else:
-			has_material = true
-	if has_material:
-		return "clear the objective room (kill everything) to switch on shipping"
-	if has_junk:
-		return "open the factory [I], press [B] to place your Recycler, then move junk onto its input"
-	return "find a scrap pile and press [F] to salvage junk into your arm"
+	var has_scrap := false
+	var f := RunState.factory
+	if f != null:
+		for t: String in RunState.ARM_SCRAP_TYPES:
+			if f.arm_slot_count(t) > 0:
+				has_scrap = true
+				break
+	if not has_scrap:
+		return "hold [F] on a scrap pile to salvage scrap into your Scrapper Arm"
+	return "open the factory [I]: [B] a Scrap Insert to tap the arm, build recyclers/ammo makers + a weapon, then return to the start [F] to extract"
 
 
 func _resource_line() -> String:
@@ -316,7 +331,7 @@ func _summary_text() -> String:
 		RunState.RESULT_EXTRACTED:
 			lines.append("EXTRACTED — you left the area safely.")
 		RunState.RESULT_SHIPPED:
-			lines.append("SHIPPED — retrieval cartridge sent home to Mars.")
+			lines.append("EXTRACTED — you hauled your inventory back to the lair.")
 		_:
 			lines.append("RUN LOST — no respawn beacon remained.")
 	lines.append("")
@@ -399,6 +414,10 @@ func _build_ui() -> void:
 	# Component exchange (opened from the start-room Component Exchange station).
 	_exchange = ExchangePanel.new()
 	add_child(_exchange)
+
+	# System terminal (opened from a System Terminal — upload tech data, buy upgrades).
+	_terminal = TerminalPanel.new()
+	add_child(_terminal)
 
 	# Fabricator crafting menu (opened from a Fabricator station).
 	_fabricator = FabricatorPanel.new()

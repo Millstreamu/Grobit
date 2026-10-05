@@ -5,7 +5,7 @@
       "name": "Respawn Beacon",
       "icon": "respawn_beacon",
       "color": "3ad6a2",
-      "cost": { "junk": 2 },
+      "cost": { "copper": 2 },
       "uses": 2
     },
     "power_relay": {

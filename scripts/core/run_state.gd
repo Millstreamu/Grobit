@@ -23,49 +23,21 @@ const FACTORY_COLS := 8
 const FACTORY_ROWS := 8
 var factory: FactoryGrid
 
-## The Scrapper Arm is a permanent 4-slot bar above the grid — one slot per scrap type,
-## each stacking to ARM_STACK_MAX. Harvesting scrap fills it; Scrap Insert points (built
-## with [B]) pull from it and spawn the scrap into the grid. It is NOT a grid machine.
+## The four typed scraps. The Scrapper Arm is a 5-cell GRID MACHINE now (core + one slot per
+## type); harvested scrap stacks into its matching slot (FactoryGrid.deposit_harvest) and an
+## adjacent recycler pulls it out. There is no top bar any more.
 const ARM_SCRAP_TYPES := ["copper_scrap", "steel_scrap", "plastic_scrap", "ceramic_scrap"]
-const ARM_STACK_MAX := 99
-var arm_scrap: Dictionary = {}
 
-## Scrap (junk) and Tech Data are run CURRENCIES shown on the top bar, not grid items — they
-## never take inventory cells. get_quantity/add/can_afford/spend route these ids here; every
-## other resource lives in the factory grid.
-const BAR_CURRENCIES := ["junk", "tech_data"]
+## Tech Data is the one run CURRENCY shown on the top bar, not a grid item — it never takes an
+## inventory cell. get_quantity/add/can_afford/spend route it here; every other resource
+## (typed scrap in the arm's slots, refined materials/components in the grid) lives elsewhere.
+## There is no generic 'junk' any more — repairs are paid in refined materials from the grid.
+const BAR_CURRENCIES := ["tech_data"]
 var currency: Dictionary = {}
 
 
 func currency_count(id: String) -> int:
 	return int(currency.get(id, 0))
-
-
-func arm_count(id: String) -> int:
-	return int(arm_scrap.get(id, 0))
-
-
-## Free space left in a scrap slot (0 if the id isn't an arm scrap type).
-func arm_space(id: String) -> int:
-	if not ARM_SCRAP_TYPES.has(id):
-		return 0
-	return ARM_STACK_MAX - arm_count(id)
-
-
-## Stacks up to `n` of a scrap type into the arm bar; returns how many fit.
-func arm_add(id: String, n := 1) -> int:
-	var added := mini(n, arm_space(id))
-	if added > 0:
-		arm_scrap[id] = arm_count(id) + added
-	return added
-
-
-## Pulls up to `n` of a scrap type out of the arm bar; returns how many were available.
-func arm_take(id: String, n := 1) -> int:
-	var took := mini(n, arm_count(id))
-	if took > 0:
-		arm_scrap[id] = arm_count(id) - took
-	return took
 
 var area_id := ""
 var run_seed := 0
@@ -89,6 +61,10 @@ var run_chain: Dictionary = {}
 ## this is on (see docs/INVENTORY_FACTORY_DIRECTION.md — objective gates shipping).
 var shipping_unlocked := false
 
+## False while you're still in the lair (goblin on foot); true once you've hopped in the
+## scrapbot and driven out into the ruins. Drives the scrapbot's prompt (drive out / extract).
+var driving := false
+
 ## Machine names newly unlocked by the shipment that ended this run (for the summary).
 var last_run_unlocks: Array = []
 
@@ -108,11 +84,27 @@ var reshuffles := 0
 ## Resets every run (it's spent in-run to get a machine you use now, not banked meta).
 var exchange_credit := 0
 
+## The Component Exchange gives only a limited number of machines per run, then goes
+## dormant. Base-cap is 1; meta progression can raise it (the "exchange_machines" effect).
+var exchange_machines_granted := 0
+
+
+func exchange_machine_cap() -> int:
+	return 1 + int(MetaState.effect_total("exchange_machines", 0.0))
+
+
+func exchange_dormant() -> bool:
+	return exchange_machines_granted >= exchange_machine_cap()
+
 ## Machines built this run but not currently placed (id -> count). Placing from the
 ## stock is free (you already own it); picking a machine up returns it here. This is
 ## what makes sequential batch play work in a small grid — build a line, run it,
 ## pick the machines up, and re-lay them for the next batch.
 var machine_stock: Dictionary = {}
+
+## Per-instance MACHINE storage (each with its own rolled layout). Links to
+## MetaState.machine_instances in begin_run so it persists across runs.
+var machine_instances: Array = []
 
 
 func begin_run(new_area_id: String, new_seed: int) -> void:
@@ -120,7 +112,9 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 	run_seed = new_seed
 	result = RESULT_NONE
 	run_active = true
-	shipping_unlocked = false
+	shipping_unlocked = true  # extraction is ungated now — just return to the start point
+	driving = false           # you start in the lair as the goblin, not yet in the scrapbot
+	exchange_machines_granted = 0
 	reshuffles = int(MetaState.effect_total("reshuffles", 0.0))
 
 	# Ability is chosen at the start of each run. Only "starter" abilities are
@@ -131,21 +125,19 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 		if bool(GameData.abilities[ability_id].get("starter", true)):
 			available_abilities.append(ability_id)
 
-	# Inventory-factory: a bare grid each run. Scrap enters through Scrap Insert points you
-	# build from the Scrapper Arm bar (see arm_scrap), not a pre-placed machine.
+	# Inventory-factory: a bare grid each run (the persistent layout is loaded over it by the
+	# RunController). Harvested scrap stacks into the Scrapper Arm machine's typed slots, and
+	# adjacent recyclers pull it out — see FactoryGrid.deposit_harvest / _consume_available.
 	factory = FactoryGrid.new(FACTORY_COLS, FACTORY_ROWS)
 
-	# The Scrapper Arm bar starts empty — one slot per scrap type.
-	arm_scrap = {}
-	for scrap_type: String in ARM_SCRAP_TYPES:
-		arm_scrap[scrap_type] = 0
+	# Top-bar currency starts empty (Tech Data comes from scrapping machines, uploaded at a Terminal).
+	currency = {"tech_data": 0}
 
-	# Top-bar currencies start empty (you find Scrap; Tech Data comes from scrapping).
-	currency = {"junk": 0, "tech_data": 0}
-
-	# Machines are found broken in the world and repaired — you start with none in stock
-	# (only the pre-placed Scrapper Arm). Explore to find and repair a Recycler.
-	machine_stock = {}
+	# Machine/transport STORAGE persists across runs (Slice C): repaired gear lives in
+	# MetaState.machine_storage and is placed at run-start setup. Link the run's stock to it so
+	# add/take_from_stock mutate the persistent store directly (saved on end_run).
+	machine_stock = MetaState.machine_storage
+	machine_instances = MetaState.machine_instances
 
 	# Component Exchange credit starts empty each run.
 	exchange_credit = 0
@@ -173,21 +165,18 @@ func level_cost(level: int) -> Dictionary:
 	return {"tech_data": level + 1}
 
 
-## Resource cost to place a machine or transport part (paid from the factory).
+## Resource cost to place a machine or transport part (paid from the factory). Transport and
+## Scrap Insert points are FREE to place now — they're set up in the lair (Slice A) and will
+## become found-and-repaired items (Slice C). Machines are placed from stock, never bought.
 func part_cost(id: String) -> Dictionary:
-	match id:
-		"__conveyor":
-			return {"junk": 1}
-		"__splitter":
-			return {"junk": 2}
-		"__filter":
-			return {"junk": 3}
-	if id.begins_with("__insert_"):
-		return {"junk": 1}  # a Scrap Insert point
+	if id.begins_with("__"):
+		return {}  # transport (__conveyor/__splitter/__filter) is free to place
 	return GameData.machines.get(id, {}).get("cost", {})
 
 
 # --------------------------------------------------------- machine stock ----
+# Fungible parts (transport/caches) are counted in machine_stock; found MACHINES are kept as
+# per-instance records in machine_instances (each with its own rolled layout).
 
 func stock_count(id: String) -> int:
 	return int(machine_stock.get(id, 0))
@@ -204,6 +193,41 @@ func add_to_stock(id: String) -> void:
 	machine_stock[id] = stock_count(id) + 1
 
 
+# ----------------------------------------------- machine instances (dupes) ----
+# machine_instances links to MetaState.machine_instances (set in begin_run) so repairs persist.
+
+func instance_count() -> int:
+	return machine_instances.size()
+
+
+## Stores a machine instance with an explicit layout (used when STASHING a placed machine — its
+## current layout is preserved, not re-rolled).
+func store_instance(def_id: String, layout: Dictionary) -> void:
+	machine_instances.append({
+		"def_id": def_id,
+		"in_offsets": (layout.get("in_offsets", []) as Array).duplicate(),
+		"out_offsets": (layout.get("out_offsets", []) as Array).duplicate(),
+		"hold_offsets": (layout.get("hold_offsets", []) as Array).duplicate(),
+		"body_offsets": (layout.get("body_offsets", []) as Array).duplicate(),
+	})
+
+
+## Adds a freshly FOUND machine: rolls a brand-new layout so duplicates of a type differ. The
+## rolled port sides / body are frozen on the instance and reused when it's placed.
+func add_machine_instance(def_id: String) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var layout := FactoryGrid.new(8, 8).roll_machine_layout(def_id, rng)
+	store_instance(def_id, layout)
+
+
+## Removes and returns the instance at `index` (when it's actually placed or scrapped), or {}.
+func take_instance(index: int) -> Dictionary:
+	if index < 0 or index >= machine_instances.size():
+		return {}
+	return machine_instances.pop_at(index)
+
+
 func end_run(new_result: String) -> Dictionary:
 	if not run_active:
 		return {}
@@ -214,10 +238,8 @@ func end_run(new_result: String) -> Dictionary:
 		"resources": resource_counts(),
 		"tech_data": get_quantity("tech_data"),
 	}
-	if new_result != RESULT_LOST:
-		var banked := get_quantity("tech_data")
-		if banked > 0:
-			MetaState.add_tech_data(banked)
+	# Tech Data is NO LONGER auto-banked at run end — you must upload it at a System Terminal
+	# during the run (see TerminalPanel). Un-uploaded Tech Data is lost on extraction/death.
 	run_ended.emit(new_result, summary)
 	return summary
 
@@ -287,6 +309,23 @@ func add(resource_id: String, amount := 1) -> int:
 			inventory_changed.emit(resource_id, get_quantity(resource_id))
 		return removed
 	return 0
+
+
+## Deposits a harvested/dropped item into its home: the four typed scraps stack into the Scrapper
+## Arm machine's matching slot, Tech Data on the top bar, everything else into the factory grid.
+## Returns amount accepted (0 if the arm is full/absent, etc.).
+func deposit(id: String, amount := 1) -> int:
+	if ARM_SCRAP_TYPES.has(id):
+		if factory == null:
+			return 0
+		var placed := 0
+		for _i in amount:
+			if factory.deposit_harvest(id):
+				placed += 1
+			else:
+				break
+		return placed
+	return add(id, amount)
 
 
 func can_afford(cost: Dictionary) -> bool:

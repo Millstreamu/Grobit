@@ -4,6 +4,12 @@ extends CharacterBody2D
 signal died()
 
 const SPRITE_NAME := "grobit"
+## On foot in the lair the player IS the goblin: a static 16×16 sprite (no walk cycle) that
+## hops when it moves — the classic pixel-game bob. Driving the scrapbot swaps back to `grobit`.
+const GOBLIN_SPRITE_NAME := "goblin"
+const GOBLIN_SCALE := 1.0        # the goblin reads small — drawn at its native 16×16
+const HOP_SPEED := 15.0          # radians/sec through the hop cycle (~2.4 hops/sec)
+const HOP_HEIGHT := 5.0          # peak height of each hop, in pixels
 
 @export_category("Movement")
 @export var movement_speed := 150.0
@@ -31,6 +37,8 @@ var combat: PlayerCombat
 var _shield_seconds := 0.0
 var _flash_seconds := 0.0
 var _input_locked := false
+var _goblin_mode := false
+var _hop_phase := 0.0
 
 
 func _ready() -> void:
@@ -50,6 +58,9 @@ func _ready() -> void:
 	# Servo Legs tech (or similar) scales base movement speed.
 	movement_speed *= float(MetaState.effect_value("move_speed", 1.0))
 
+	# Start as the goblin on foot if we're in the lair (not yet driving the scrapbot).
+	_set_goblin_mode(not RunState.driving)
+
 
 func _physics_process(delta: float) -> void:
 	if _shield_seconds > 0.0:
@@ -62,10 +73,17 @@ func _physics_process(delta: float) -> void:
 	else:
 		sprite.modulate = Color.WHITE
 
-	_update_gun()
+	# On foot in the lair vs. driving the scrapbot out in the ruins.
+	var want_goblin := not RunState.driving
+	if want_goblin != _goblin_mode:
+		_set_goblin_mode(want_goblin)
+
+	if not _goblin_mode:
+		_update_gun()
 
 	if _input_locked:
 		velocity = Vector2.ZERO
+		_update_hop(delta)
 		return
 
 	var input_direction := Input.get_vector("move_left", "move_right", "move_up", "move_down")
@@ -75,11 +93,48 @@ func _physics_process(delta: float) -> void:
 	var rate := acceleration if not input_direction.is_zero_approx() else deceleration
 	velocity = velocity.move_toward(target_velocity, rate * delta)
 
-	if not input_direction.is_zero_approx():
+	# The goblin doesn't turn to face its heading (it stays upright and just flips L/R); the
+	# scrapbot rotates toward movement like before.
+	if not _goblin_mode and not input_direction.is_zero_approx():
 		var target_rotation := input_direction.angle() + facing_offset
 		rotation = rotate_toward(rotation, target_rotation, rotation_speed * delta)
 
 	move_and_slide()
+	_update_hop(delta)
+
+
+## Swaps between the on-foot goblin (lair) and the driven scrapbot (run). The goblin is a
+## static sprite, upright, unarmed; the scrapbot is the original rotating, gun-carrying body.
+func _set_goblin_mode(on: bool) -> void:
+	_goblin_mode = on
+	if on:
+		sprite.texture = ContentLibrary.get_icon(GOBLIN_SPRITE_NAME, Vector2i(16, 16), "6ab04c")
+		sprite.scale = Vector2(GOBLIN_SCALE, GOBLIN_SCALE)
+		sprite.rotation = 0.0
+		rotation = 0.0  # the goblin stays upright — the body never rotates on foot
+		gun.visible = false
+	else:
+		sprite.texture = ContentLibrary.get_icon(SPRITE_NAME, Vector2i(32, 32), "6db7d4")
+		sprite.scale = Vector2.ONE
+		sprite.position = Vector2.ZERO
+		sprite.flip_h = false
+		gun.visible = true
+	_hop_phase = 0.0
+
+
+## The hop: while the goblin moves, bob the sprite up and down (|sin| so it "lands" each cycle)
+## and face its horizontal heading. Idle settles back to the ground. A no-op while driving.
+func _update_hop(delta: float) -> void:
+	if not _goblin_mode:
+		return
+	if velocity.length() > 10.0:
+		_hop_phase += delta * HOP_SPEED
+		sprite.position.y = -absf(sin(_hop_phase)) * HOP_HEIGHT
+		if absf(velocity.x) > 5.0:
+			sprite.flip_h = velocity.x > 0.0  # art faces left by default — flip when moving right
+	else:
+		_hop_phase = 0.0
+		sprite.position.y = move_toward(sprite.position.y, 0.0, HOP_HEIGHT * 10.0 * delta)
 
 
 # Points the gun at the enemy the auto-attack is targeting; otherwise it lines up

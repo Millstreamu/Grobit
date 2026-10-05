@@ -28,16 +28,16 @@
       "nodes": [
         { "label": "copper scrap", "sprite": "scrap_copper", "color": "b0632a",
           "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
-          "pool": [ { "id": "copper_scrap", "weight": 5 }, { "id": "junk", "weight": 1 } ] },
+          "pool": [ { "id": "copper_scrap", "weight": 5 } ] },
         { "label": "steel scrap", "sprite": "scrap_steel", "color": "8f98a3",
           "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
-          "pool": [ { "id": "steel_scrap", "weight": 5 }, { "id": "junk", "weight": 1 } ] },
+          "pool": [ { "id": "steel_scrap", "weight": 5 } ] },
         { "label": "plastic scrap", "sprite": "scrap_plastic", "color": "359186",
           "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
-          "pool": [ { "id": "plastic_scrap", "weight": 5 }, { "id": "junk", "weight": 1 } ] },
+          "pool": [ { "id": "plastic_scrap", "weight": 5 } ] },
         { "label": "ceramic scrap", "sprite": "scrap_ceramic", "color": "c4bba2",
           "per_room_min": 0, "per_room_max": 2, "tokens_min": 4, "tokens_max": 9,
-          "pool": [ { "id": "ceramic_scrap", "weight": 5 }, { "id": "junk", "weight": 1 } ] }
+          "pool": [ { "id": "ceramic_scrap", "weight": 5 } ] }
       ]
     },
     "machine_finds": {
@@ -57,7 +57,7 @@
     },
     "repair": {
       "cost": {
-        "junk": 2
+        "copper": 2
       },
       "rewards": [
         "ability",
@@ -66,13 +66,13 @@
       ]
     },
     "salvage_loot": [
-      { "resource": "junk", "min": 3, "max": 6, "chance": 1.0 },
-      { "resource": "junk", "min": 2, "max": 4, "chance": 0.7 }
+      { "resource": "copper_scrap", "min": 3, "max": 6, "chance": 1.0 },
+      { "resource": "steel_scrap", "min": 2, "max": 4, "chance": 0.7 }
     ],
     "resource_drops": {
       "basic_enemy": [
         {
-          "resource": "junk",
+          "resource": "copper_scrap",
           "min": 1,
           "max": 1,
           "chance": 0.6

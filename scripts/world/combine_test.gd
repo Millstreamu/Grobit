@@ -17,6 +17,7 @@ func _ready() -> void:
 	f.place_machine("steel_ammo_maker", Vector2i(6, 1))
 	RunState.factory = f
 	RunState.machine_stock = {}
+	RunState.machine_instances = []
 
 	# The scrapper arm can't be combined.
 	panel._cursor = Vector2i(0, 0)
@@ -38,7 +39,7 @@ func _ready() -> void:
 	_ck(f.machine_at(Vector2i(3, 1)) < 0 and f.machine_at(Vector2i(3, 4)) < 0, "both recyclers removed from the grid")
 	_ck(panel._place_mode, "the result drops into your hand to place")
 	_ck(panel._place_id in ["plastic_recycler", "ceramic_recycler"], "result is a DIFFERENT recycler (not either input)")
-	_ck(RunState.stock_count(panel._place_id) == 1, "the result is held in stock until placed")
+	_ck(RunState.instance_count() == 1, "the result is held as an instance until placed")
 
 	# Two of the SAME type (two copper recyclers) → one of the other three recyclers.
 	var w := FactoryGrid.new(8, 8)
@@ -72,17 +73,17 @@ func _ready() -> void:
 	panel._combine_at_cursor()
 	_ck(panel._combine_a_core == Vector2i(-1, -1), "marking the same machine twice clears it")
 
-	# --- scrap a machine held in hand (from stock) → tech data ---
+	# --- scrap a machine instance held in hand → tech data ---
 	RunState.factory = FactoryGrid.new(8, 8)
 	RunState.factory.place_machine("scrapper_arm", Vector2i(0, 0))
-	RunState.machine_stock = {"copper_recycler": 1}
+	RunState.machine_instances = []
 	panel._reset_modes()
-	panel._place_id = "copper_recycler"
-	panel._place_mode = true
+	RunState.add_machine_instance("copper_recycler")
+	panel._begin_place_instance(0)  # into hand, with its layout
 	var before := RunState.get_quantity("tech_data")
 	panel._scrap_held_machine()
 	_ck(RunState.get_quantity("tech_data") > before, "scrapping a held machine yields tech data")
-	_ck(RunState.stock_count("copper_recycler") == 0, "the scrapped machine leaves stock")
+	_ck(RunState.instance_count() == 0, "the scrapped instance leaves storage")
 	_ck(not panel._place_mode or panel._place_id != "copper_recycler", "no longer holding the scrapped machine")
 
 	# --- scrap a placed machine lifted for a move → tech data ---
@@ -98,24 +99,6 @@ func _ready() -> void:
 	_ck(h.machine_at(Vector2i(4, 4)) < 0, "the lifted machine is removed when scrapped")
 	_ck(RunState.get_quantity("tech_data") > td, "scrapping a lifted machine yields tech data")
 	_ck(not panel._move_mode, "move mode ends after scrapping")
-
-	# --- leveling is instant and in place: no new slots, machine doesn't move ---
-	var L := FactoryGrid.new(8, 8)
-	L.place_machine("scrapper_arm", Vector2i(0, 0))
-	var lmi := L.place_machine("copper_recycler", Vector2i(4, 4))
-	RunState.factory = L
-	RunState.add("tech_data", 10)
-	var slots_before: int = L.slot_positions(L.machines[lmi]).size()
-	var core_before := Vector2i(L.machines[lmi].core)
-	var td_before := RunState.get_quantity("tech_data")
-	panel._reset_modes()
-	panel._cursor = Vector2i(4, 4)
-	panel._begin_level()
-	_ck(L.level_of(lmi) == 2, "leveling raises the level to 2")
-	_ck(RunState.get_quantity("tech_data") < td_before, "leveling spends tech data")
-	_ck(L.slot_positions(L.machines[lmi]).size() == slots_before, "leveling adds no new slots")
-	_ck(Vector2i(L.machines[lmi].core) == core_before and L.machine_at(core_before) == lmi, "the machine stays put (no relocation)")
-	_ck(not panel._place_mode and not panel._move_mode, "leveling is instant — no sub-mode")
 
 	if fail == 0:
 		print("COMBINE_TEST: ALL PASS")

@@ -161,7 +161,7 @@ func _spawn_drops() -> void:
 		if amount <= 0:
 			continue
 		var pickup := PICKUP_SCENE.instantiate()
-		pickup.resource_id = String(drop.get("resource", "junk"))
+		pickup.resource_id = String(drop.get("resource", "copper_scrap"))
 		pickup.amount = amount
 		var angle := TAU * (float(index) / maxf(1.0, float(drops.size())))
 		pickup.global_position = global_position + Vector2.RIGHT.rotated(angle) * 14.0
@@ -175,4 +175,4 @@ func _drop_table() -> Array:
 	var table: Variant = drops.get(enemy_id, null)
 	if table is Array:
 		return table
-	return [{"resource": "junk", "min": 1, "max": 2, "chance": 1.0}]
+	return [{"resource": "copper_scrap", "min": 1, "max": 2, "chance": 1.0}]

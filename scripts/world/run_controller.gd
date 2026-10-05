@@ -18,6 +18,9 @@ var build_manager: BuildManager
 var lighting: LightingSystem
 var hud: Hud
 var _run_over := false
+var start_position := Vector2.ZERO
+var _lair: Room           # the start room, used as the goblin's home base
+var _lair_exit: Door      # the lair's doorway the scrapbot drives out through
 
 
 func _ready() -> void:
@@ -35,10 +38,24 @@ func _ready() -> void:
 	run_seed = fixed_seed if fixed_seed >= 0 else randi()
 	RunState.begin_run(area_id, run_seed)
 
+	# Persistent factory: carry over the layout you built last run (machines, transport,
+	# modules). begin_run() made a bare grid; replace it with the saved one if there is one.
+	var fresh_factory := not MetaState.has_factory()
+	if not fresh_factory:
+		var saved := MetaState.load_factory()
+		if saved != null:
+			RunState.factory = saved
+	_ensure_scrapper_arm()  # every factory needs the Scrapper Arm (also migrates older saves)
+	if fresh_factory:
+		_seed_starter_factory()  # first run ever: a Copper Recycler next to the arm
+
 	generator = AreaGenerator.new()
 	generator.name = "Area"
 	add_child(generator)
-	var start_position := generator.build(area_id, run_seed)
+	# Deferred generation: build ONLY the lair now. The facility beyond its sealed door doesn't
+	# exist until the player commits to a run by hopping in the scrapbot (see _drive_out), which
+	# leaves room for run-choice options before the map is rolled.
+	start_position = generator.build_lair(area_id)
 
 	# Real-time driver for the inventory-factory (ticks even while the panel pauses
 	# the tree, so processing stays live).
@@ -56,8 +73,6 @@ func _ready() -> void:
 	lighting.name = "Lighting"
 	add_child(lighting)
 
-	_spawn_objective()
-
 	player = PLAYER_SCENE.instantiate() as GrobitPlayer
 	player.global_position = start_position
 	add_child(player)
@@ -66,28 +81,19 @@ func _ready() -> void:
 	# The start room is a lit safe room.
 	lighting.add_lamp(start_position, 150.0)
 
-	# Start-room stations snap onto floor-tile centers (distinct tiles) so they line up
-	# with the grid instead of sitting at arbitrary pixel offsets.
-	var tile := 32.0
-	# Retrieval pad — where you ship out once the objective is done.
-	var pad_position: Variant = generator.claim_prop_tile(start_position + Vector2(tile, tile))
-	if pad_position == null:
-		push_error("RunController: no safe start-room tile for Retrieval Pad.")
-	else:
-		var pad := RetrievalPad.new()
-		add_child(pad)
-		pad.global_position = pad_position
-		lighting.add_lamp(pad.global_position, 96.0, 1.0, Color(0.7, 0.9, 1.0))
-
-	# Component Exchange — sell finished components for credit toward a random machine.
-	var exchange_position: Variant = generator.claim_prop_tile(start_position + Vector2(-tile, tile))
-	if exchange_position == null:
-		push_error("RunController: no safe start-room tile for Component Exchange.")
-	else:
-		var exchange := ComponentExchange.new()
-		add_child(exchange)
-		exchange.global_position = exchange_position
-		lighting.add_lamp(exchange.global_position, 96.0, 1.0, Color(1.0, 0.9, 0.6))
+	# The start room IS the lair (safe, empty, lit). Park the scrapbot at its exit so you
+	# walk over as the goblin and [F] to hop in & drive out into the dark run. The run map is
+	# already generated but unexplored (dark), so it reveals as you drive — seamless, no load.
+	_lair = generator.rooms[0] if not generator.rooms.is_empty() else null
+	var scrapbot_pos := start_position
+	if _lair != null and not _lair.doors.is_empty():
+		_lair_exit = _lair.doors[0]
+		scrapbot_pos = _lair.nearest_interior_tile(_lair_exit.global_position)
+	var scrapbot := Scrapbot.new()
+	add_child(scrapbot)
+	scrapbot.global_position = scrapbot_pos
+	lighting.add_lamp(scrapbot_pos, 100.0, 1.0, Color(0.7, 1.0, 0.7))
+	# (Component Exchange + System Terminal now spawn out in the map, not here.)
 
 	var selection := SelectionManager.new()
 	selection.name = "SelectionManager"
@@ -138,15 +144,42 @@ func _debug_spawn_loot() -> void:
 	node.generate({
 		"label": "salvage", "tokens_min": 6, "tokens_max": 8,
 		"rust_chance": 0.5, "rust_min": 1, "rust_max": 2, "loose_chance": 0.5,
-		"pool": [{"id": "junk", "weight": 1}],
+		"pool": [{"id": "copper_scrap", "weight": 1}],
 	})
 	add_child(node)
 	node.global_position = node_position
 	var station := RepairStation.new()
-	station.cost = {"junk": 2}
+	station.cost = {"copper": 2}
 	station.reward = "ability"
 	add_child(station)
 	station.global_position = station_position
+
+
+## Guarantees the factory has a Scrapper Arm (the harvest destination). Runs every launch so
+## older saves without one get migrated; a no-op once an arm is present.
+func _ensure_scrapper_arm() -> void:
+	var f := RunState.factory
+	if f == null:
+		return
+	for m: Dictionary in f.machines:
+		if String(m.get("def_id", "")) == "scrapper_arm" and not bool(m.get("removed", false)):
+			return
+	var core := Vector2i(1, 1)  # a 5-cell bar: core + copper/steel/plastic/ceramic slots to the right
+	if f.can_place("scrapper_arm", core):
+		f.place_scrapper_arm(core)
+
+
+## First-run bootstrap. You start at the bottom of the tech ladder: arm level 1 (steel only),
+## with one Steel Recycler seeded, its input against the arm's steel slot — so harvested steel
+## scrap flows straight in and the economy can start. Later tiers (copper → plastic → ceramic)
+## unlock by leveling the arm. Only runs when there's no saved factory yet.
+func _seed_starter_factory() -> void:
+	var f := RunState.factory
+	if f == null:
+		return
+	var core := Vector2i(3, 2)  # input at (2,2) sits directly below the steel slot at (2,1)
+	if f.machine_at(core) < 0 and f.can_place("steel_recycler", core):
+		f.place_machine("steel_recycler", core)
 
 
 func _spawn_objective() -> void:
@@ -162,6 +195,60 @@ func _spawn_objective() -> void:
 	terminal.global_position = position
 	if lighting != null:
 		lighting.add_lamp(terminal.global_position, 120.0, 1.1, Color(1.0, 0.8, 0.6))
+
+
+## The scrapbot was used: in the lair it opens the factory loadout (set up, then Accept to
+## launch); once out in the field it extracts and heads home.
+func on_scrapbot_interact() -> void:
+	if RunState.driving:
+		_extract()  # already out — haul the whole inventory home, no picking
+	elif hud != null:
+		hud.open_factory()  # set up your loadout; [Enter] Accept drives you out (launch_from_setup)
+
+
+## Called by the factory panel's Accept — the loadout is set, commit and drive out.
+func launch_from_setup() -> void:
+	_drive_out()
+
+
+## Extraction is seamless now: whatever is in your factory inventory (loose resources + filled
+## caches) comes home automatically — no load-the-cartridge selection screen.
+func _extract() -> void:
+	var items := {}
+	var f := RunState.factory
+	if f != null:
+		for mi in f.machines.size():
+			var cs := f.cache_state(mi)
+			if not cs.is_empty() and int(cs.count) > 0:
+				var cid := String(cs.id)
+				items[cid] = int(items.get(cid, 0)) + f.take_cache(mi)
+		for y in f.rows:
+			for x in f.cols:
+				var pos := Vector2i(x, y)
+				var cell := f.get_cell(pos)
+				if String(cell.get("kind", "")) == "resource":
+					var id := String(cell.id)
+					items[id] = int(items.get(id, 0)) + int(cell.get("count", 1))
+					f.set_cell(pos, {})
+	on_cartridge_shipped(items)
+
+
+## Hop in the scrapbot and drive one tile out of the lair into the (dark) ruins. The facility
+## is generated at THIS moment (not at run start) so a run-choice can shape it first.
+func _drive_out() -> void:
+	RunState.driving = true
+	# PLACEHOLDER: a run-powerup/ability choice will go here (chosen as you commit to the run),
+	# replacing the old game-start ability chooser. Left as a no-op until that slice.
+	if generator != null and not generator.facility_ready():
+		generator.generate_facility(run_seed)
+	if _lair_exit != null:
+		_lair_exit.unlock()  # open the way out
+		if player != null:
+			var dir := _lair_exit.global_position - start_position
+			dir = dir.normalized() if dir.length() > 0.1 else Vector2.RIGHT
+			player.global_position = _lair_exit.global_position + dir * 36.0  # one tile into the run
+	if hud != null:
+		hud.log_message("You hop in the scrapbot and drive out into the ruins…")
 
 
 ## Ends the run, banking the loaded cartridge toward the permanent Mars total.
@@ -199,6 +286,9 @@ func _end_run(result: String) -> void:
 	if _run_over:
 		return
 	_run_over = true
+	# The factory layout you built persists to the next run (extraction or death alike).
+	# (A future big-machine extraction will clear it instead.)
+	MetaState.save_factory(RunState.factory)
 	if player != null:
 		player.set_input_locked(true)
 	var summary := RunState.end_run(result)
@@ -209,3 +299,17 @@ func _end_run(result: String) -> void:
 func restart_run() -> void:
 	get_tree().paused = false
 	get_tree().reload_current_scene()
+
+
+## DEBUG (F9): wipe the persistent factory + storage back to a single bare Scrapper Arm, then
+## reload. Useful for testing the loop from a clean slate.
+func debug_reset_to_arm() -> void:
+	var g := FactoryGrid.new(RunState.FACTORY_COLS, RunState.FACTORY_ROWS)
+	g.place_scrapper_arm(Vector2i(1, 1))
+	MetaState.save_factory(g)            # persist a factory that holds only the arm
+	MetaState.machine_storage.clear()    # empty the lair storage (transport/caches)
+	MetaState.machine_instances.clear()  # and the stored machine instances
+	MetaState.save_game()
+	if hud != null:
+		hud.log_message("DEBUG: factory + storage reset to a bare Scrapper Arm.")
+	restart_run()

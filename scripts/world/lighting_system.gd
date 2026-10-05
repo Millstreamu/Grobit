@@ -11,7 +11,7 @@ extends Node2D
 ## World darkness — the ambient floor everything sits at outside of light. Kept high
 ## enough that walls and doors stay faintly readable (so you can see the room shape
 ## and where the exits are), but low enough that the cone/lamps clearly dominate.
-const DARK := Color(0.16, 0.17, 0.21)
+const DARK := Color(0.24, 0.255, 0.315)
 
 ## Flat tint applied to floor tiles (see AreaGenerator._add_floor). Darkening the
 ## open floor makes the walls read as the brighter structure in ambient light, so

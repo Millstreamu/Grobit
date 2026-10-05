@@ -20,11 +20,25 @@ extends RefCounted
 ## automatically (adjacency auto-chaining) with natural back-pressure: a full output
 ## cell blocks the machine until it is cleared.
 
+## Each permanent machine-upgrade level (MetaState.machine_level) multiplies a recipe's
+## craft time by this — faster processing as you invest Tech Data at a System Terminal.
+const SPEED_PER_LEVEL := 0.85
 ## Extra slot cells claimed per level-up (RNG-shaped, must fit — no rotation).
 ## (Leveling no longer grows slots in-game; kept for the grid slot API + its test.)
 const SLOTS_PER_LEVEL := 2
 ## Seconds between conveyor/splitter transport steps (item moves one cell per step).
 const CONVEYOR_INTERVAL := 0.35
+
+## The Scrapper Arm is a 5-cell machine: a core + 4 typed scrap slots (cell kind "arm_slot",
+## one per type, laid out along the holding offsets in TIER ORDER). Harvested scrap stacks into
+## its matching slot; an adjacent recycler pulls it straight out. Slots stack to ARM_SLOT_MAX.
+##
+## The arm's LEVEL (MetaState.machine_level) gates how many slots are live: L1 = steel only,
+## L2 = +copper, L3 = +plastic, L4 = +ceramic. A scrap type's tier is its index here + 1, so a
+## slot is unlocked when arm_level >= that tier. Locked slots can't be harvested into (inert).
+const ARM_SLOT_TYPES := ["steel_scrap", "copper_scrap", "plastic_scrap", "ceramic_scrap"]
+const ARM_SLOT_MAX := 99
+const _NEIGHBORS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
 var cols: int
 var rows: int
@@ -90,7 +104,7 @@ func is_core(p: Vector2i) -> bool:
 ## Nothing else may be placed/dropped there.
 func is_machine_cell(p: Vector2i) -> bool:
 	var kind := String(get_cell(p).get("kind", ""))
-	return kind == "machine" or kind == "machine_slot" or kind == "machine_body"
+	return kind == "machine" or kind == "machine_slot" or kind == "machine_body" or kind == "arm_slot"
 
 
 ## How many tiles a machine's core occupies — the more ports (complexity), the bigger.
@@ -330,6 +344,18 @@ func place_machine_layout(def_id: String, core: Vector2i, in_offsets: Array, out
 
 ## Places a machine; returns its index, or -1 if it doesn't fit. An item on the core
 ## cell is shifted aside rather than blocking the placement.
+## Places the Scrapper Arm and turns its 4 holding cells into typed scrap slots. Returns the
+## machine index, or -1 if it won't fit.
+func place_scrapper_arm(core: Vector2i) -> int:
+	var mi := place_machine("scrapper_arm", core)
+	if mi < 0:
+		return -1
+	var offsets := hold_offsets_of(machines[mi])
+	for i in mini(offsets.size(), ARM_SLOT_TYPES.size()):
+		set_cell(core + Vector2i(offsets[i]), {"kind": "arm_slot", "scrap": ARM_SLOT_TYPES[i], "count": 0})
+	return mi
+
+
 func place_machine(def_id: String, core: Vector2i) -> int:
 	if String(get_cell(core).get("kind", "")) == "resource":
 		if not can_place_displacing(def_id, core) or not displace_item(core):
@@ -357,6 +383,8 @@ func pickup_machine(mi: int) -> String:
 		set_cell(Vector2i(m.core) + offset, {})
 	for p: Variant in m.get("slots", []):
 		set_cell(Vector2i(p), {})
+	for p: Vector2i in holding_positions(m):
+		set_cell(p, {})  # clears the Scrapper Arm's typed scrap slots
 	machines[mi] = {"removed": true}
 	return did
 
@@ -715,8 +743,10 @@ func tick(delta: float) -> void:
 			m.status = ""  # e.g. the scrapper arm (no recipes → no status/progress)
 			continue
 
-		var have := _input_multiset(m)
-		var level := int(m.get("level", 1))
+		var have := _available_inputs(m)  # input cells + scrap pulled from adjacent arm slots
+		# PERMANENT upgrade level for this machine TYPE (bought with Tech Data at a System
+		# Terminal; persists via MetaState). Higher level = faster + unlocks higher recipes.
+		var level := int(MetaState.machine_level(String(m.def_id)))
 		var recipe: Dictionary = {}
 		for r: Dictionary in recipes:
 			# Higher-tier recipes are gated behind machine level (data-driven 'level').
@@ -731,9 +761,9 @@ func tick(delta: float) -> void:
 			m.status_detail = _closest_missing(m, recipes)
 			continue
 
-		# Level no longer affects speed — leveling is a blank capability for now (its effect
-		# is still to be designed). Modules can still change craft time.
-		var seconds := float(recipe.get("seconds", 3.0)) * _module_speed_mult(m)
+		# Each permanent upgrade level multiplies craft time down (SPEED_PER_LEVEL); modules
+		# stack on top.
+		var seconds := float(recipe.get("seconds", 3.0)) * pow(SPEED_PER_LEVEL, level - 1) * _module_speed_mult(m)
 		m.progress_ratio = clampf(float(m.progress) / maxf(0.01, seconds), 0.0, 1.0)
 
 		# Blocked unless every product can land (an empty output cell, or a same-id output
@@ -749,7 +779,7 @@ func tick(delta: float) -> void:
 		m.working = true
 		m.progress = float(m.progress) + delta
 		if m.progress >= seconds:
-			_consume(m, recipe.get("needs", {}))
+			_consume_available(m, recipe.get("needs", {}))
 			_place_products(m, recipe.get("produces", {}))
 			# 'yield' modules add a bonus of each product into any free/stackable cells.
 			for _y in _module_yield(m):
@@ -758,14 +788,12 @@ func tick(delta: float) -> void:
 			m.progress = 0.0
 			m.working = false
 
-	# Conveyors/splitters carry items one cell per CONVEYOR_INTERVAL; arms trickle a
-	# held item out to their (clear) output at the same cadence — a built-in conveyor.
+	# Conveyors/splitters carry items one cell per CONVEYOR_INTERVAL. (The Scrapper Arm has no
+	# output of its own — adjacent recyclers pull scrap straight from its slots, see tick above.)
 	_transport_accum += delta
 	while _transport_accum >= CONVEYOR_INTERVAL:
 		_transport_accum -= CONVEYOR_INTERVAL
 		_transport_step()
-		_arm_feed_step()
-		_inserter_step()
 
 
 ## Multiset (id -> count) of resources currently in a machine's input cells.
@@ -902,15 +930,111 @@ func status_at(pos: Vector2i) -> String:
 
 # ------------------------------------------------------ arm intake ----
 
-## Drops a harvested item into the first free holding cell of a machine that has
-## holding cells (the scrapper arm). Returns false if there is no room (arm full).
+## Current Scrapper Arm level (how many scrap tiers are unlocked). Default 1 (steel only).
+func arm_level() -> int:
+	return int(MetaState.machine_level("scrapper_arm"))
+
+
+## A scrap type's tier (1 = steel … 4 = ceramic), or 0 if it isn't one of the four scraps.
+func arm_tier_of(id: String) -> int:
+	return ARM_SLOT_TYPES.find(id) + 1
+
+
+## True if the arm can currently HOLD this scrap type — it's one of the four and its tier is
+## unlocked by the arm's level. Harvesting a locked type is refused (its pile reads as inert).
+func arm_accepts(id: String) -> bool:
+	var tier := arm_tier_of(id)
+	return tier >= 1 and tier <= arm_level()
+
+
+## Stacks one harvested scrap into the Scrapper Arm's matching typed slot. Returns false if the
+## type's tier isn't unlocked yet, there is no arm / no slot for it, or the slot is full.
 func deposit_harvest(id: String) -> bool:
-	for m: Dictionary in machines:
-		for p: Vector2i in holding_positions(m):
-			if get_cell(p).is_empty():
-				set_cell(p, {"kind": "resource", "id": id, "count": 1})
-				return true
+	if not arm_accepts(id):
+		return false
+	for cell: Dictionary in cells:
+		if String(cell.get("kind", "")) == "arm_slot" and String(cell.get("scrap", "")) == id \
+				and int(cell.get("count", 0)) < ARM_SLOT_MAX:
+			cell["count"] = int(cell.get("count", 0)) + 1
+			return true
 	return false
+
+
+## Room left in the arm's slot for this scrap type (0 if there is no arm / no slot for it).
+func arm_slot_space(id: String) -> int:
+	var space := 0
+	for cell: Dictionary in cells:
+		if String(cell.get("kind", "")) == "arm_slot" and String(cell.get("scrap", "")) == id:
+			space += ARM_SLOT_MAX - int(cell.get("count", 0))
+	return space
+
+
+## How much of a scrap type the arm is currently holding.
+func arm_slot_count(id: String) -> int:
+	var n := 0
+	for cell: Dictionary in cells:
+		if String(cell.get("kind", "")) == "arm_slot" and String(cell.get("scrap", "")) == id:
+			n += int(cell.get("count", 0))
+	return n
+
+
+# -------------------------------------------- recyclers pull from the arm ----
+
+## Arm slots orthogonally adjacent to a machine's input cells (where it can draw scrap from).
+func _arm_slots_adjacent_to_inputs(m: Dictionary) -> Array:
+	var out: Array = []
+	var seen := {}
+	for ip: Vector2i in input_positions(m):
+		for d: Vector2i in _NEIGHBORS:
+			var np := ip + d
+			if not in_bounds(np) or seen.has(np):
+				continue
+			if String(get_cell(np).get("kind", "")) == "arm_slot":
+				seen[np] = true
+				out.append(np)
+	return out
+
+
+## Inputs available to a machine: what sits in its input cells PLUS scrap in adjacent arm slots.
+func _available_inputs(m: Dictionary) -> Dictionary:
+	var ms := _input_multiset(m)
+	for sp: Vector2i in _arm_slots_adjacent_to_inputs(m):
+		var c := get_cell(sp)
+		var n := int(c.get("count", 0))
+		if n > 0:
+			var id := String(c.get("scrap", ""))
+			ms[id] = int(ms.get(id, 0)) + n
+	return ms
+
+
+## Consumes `needs` from a machine's input cells first, then drains any remainder from the arm
+## slots it's adjacent to (the "pull" that feeds recyclers hugging the arm).
+func _consume_available(m: Dictionary, needs: Dictionary) -> void:
+	var left := needs.duplicate()
+	# 1) drain the machine's own input cells
+	for p: Vector2i in input_positions(m):
+		var c := get_cell(p)
+		if c.get("kind", "") != "resource":
+			continue
+		var id := String(c.id)
+		var owe := int(left.get(id, 0))
+		if owe > 0:
+			var take := mini(owe, int(c.get("count", 1)))
+			var rem := int(c.get("count", 1)) - take
+			if rem <= 0:
+				set_cell(p, {})
+			else:
+				c["count"] = rem
+			left[id] = owe - take
+	# 2) pull the remainder straight out of adjacent arm slots
+	for sp: Vector2i in _arm_slots_adjacent_to_inputs(m):
+		var c := get_cell(sp)
+		var id := String(c.get("scrap", ""))
+		var owe := int(left.get(id, 0))
+		if owe > 0 and int(c.get("count", 0)) > 0:
+			var take := mini(owe, int(c.get("count", 0)))
+			c["count"] = int(c.get("count", 0)) - take
+			left[id] = owe - take
 
 
 ## Drops one resource item into a free cell (scanning from the bottom-right so loose
@@ -956,6 +1080,55 @@ func has_empty() -> bool:
 		if cell.is_empty():
 			return true
 	return false
+
+
+# ---------------------------------------------------- persistence ----
+
+## Serializes just the LAYOUT (machines + transport/inserter placement, levels, modules)
+## for cross-run persistence. Loose resources, cache contents, and in-flight progress do
+## NOT carry over — you re-gather and re-process materials each run.
+func to_data() -> Dictionary:
+	var saved_cells: Array = []
+	for c: Dictionary in cells:
+		var kind := String(c.get("kind", ""))
+		if kind == "resource":
+			saved_cells.append({})  # loose items don't persist
+		elif kind == "arm_slot":
+			var ac := c.duplicate()
+			ac["count"] = 0  # the arm's slot STRUCTURE persists; its scrap resets each run
+			saved_cells.append(ac)
+		elif _is_transport_kind(kind):
+			var tc := c.duplicate()
+			tc["item"] = ""  # drop any item riding it
+			saved_cells.append(tc)
+		else:
+			saved_cells.append(c.duplicate(true))  # machine / machine_body / machine_slot
+	var saved_machines: Array = []
+	for m: Dictionary in machines:
+		var mm := m.duplicate(true)
+		mm["progress"] = 0.0
+		mm["progress_ratio"] = 0.0
+		mm["working"] = false
+		mm["status"] = ""
+		mm["status_detail"] = ""
+		mm["cached_count"] = 0
+		mm["cached_id"] = ""
+		saved_machines.append(mm)
+	return {"cols": cols, "rows": rows, "cells": saved_cells, "machines": saved_machines}
+
+
+## Rebuilds a grid from to_data() output (after a str_to_var round-trip, Vector2i fields
+## survive intact).
+static func from_data(data: Dictionary) -> FactoryGrid:
+	var g := FactoryGrid.new(int(data.get("cols", 8)), int(data.get("rows", 8)))
+	var saved_cells: Array = data.get("cells", [])
+	for i in mini(saved_cells.size(), g.cells.size()):
+		if saved_cells[i] is Dictionary:
+			g.cells[i] = saved_cells[i]
+	var saved_machines: Variant = data.get("machines", [])
+	if saved_machines is Array:
+		g.machines = saved_machines
+	return g
 
 
 ## Counts of every resource item in the grid (id -> count), including items riding
@@ -1050,38 +1223,6 @@ func place_filter(pos: Vector2i, dir: Vector2i, filter_id := "") -> bool:
 	return true
 
 
-# ----------------------------------------------------- scrap inserters ----
-
-## A Scrap Insert point: a 2-tall source. The TOP cell is the inserter (its art); each
-## step it pulls one unit of its scrap type from the Scrapper Arm bar (RunState.arm_scrap)
-## and drops it into the cell directly BELOW, ready to be carried or fed into a machine.
-func can_place_inserter(pos: Vector2i) -> bool:
-	var below := pos + Vector2i(0, 1)
-	return in_bounds(pos) and in_bounds(below) and get_cell(pos).is_empty() and get_cell(below).is_empty()
-
-
-func place_inserter(pos: Vector2i, scrap_type: String) -> bool:
-	if not can_place_inserter(pos):
-		return false
-	set_cell(pos, {"kind": "inserter", "scrap": scrap_type})
-	return true
-
-
-## One pull per transport step: each inserter whose output cell can take an item, and whose
-## scrap type is in the arm bar, spawns one unit of that scrap below it.
-func _inserter_step() -> void:
-	for i in cells.size():
-		var c: Dictionary = cells[i]
-		if String(c.get("kind", "")) != "inserter":
-			continue
-		var below := Vector2i(i % cols, i / cols) + Vector2i(0, 1)
-		var scrap := String(c.get("scrap", ""))
-		if not _can_receive(below, scrap):
-			continue
-		if RunState.arm_take(scrap, 1) > 0:
-			_deliver(below, scrap)
-
-
 ## True (and clears the cell) if a conveyor/splitter can go at `pos`: empty cells and
 ## item cells (item shifted aside) are fine; machine/transport cells block.
 func _clear_for_transport(pos: Vector2i) -> bool:
@@ -1125,7 +1266,9 @@ func cache_state(mi: int) -> Dictionary:
 	if mi < 0 or mi >= machines.size():
 		return {}
 	var m: Dictionary = machines[mi]
-	var capacity := int(GameData.machines.get(String(m.def_id), {}).get("capacity", 0))
+	if bool(m.get("removed", false)):
+		return {}  # a removed/combined machine is a bare stub with no def_id
+	var capacity := int(GameData.machines.get(String(m.get("def_id", "")), {}).get("capacity", 0))
 	if capacity <= 0:
 		return {}
 	return {"id": String(m.get("cached_id", "")), "count": int(m.get("cached_count", 0)), "capacity": capacity}
@@ -1184,30 +1327,6 @@ func has_loaded_weapon() -> bool:
 			if String(c.get("kind", "")) == "resource" and String(c.get("id", "")) == ammo:
 				return true
 	return false
-
-
-## Each arm (a machine with holding cells) moves one held item into a free output cell
-## per step, so harvested junk trickles out of the arm like it's on a conveyor.
-func _arm_feed_step() -> void:
-	for m: Dictionary in machines:
-		if bool(m.get("removed", false)):
-			continue
-		var holds := holding_positions(m)
-		if holds.is_empty():
-			continue
-		var target := Vector2i(-1, -1)
-		for op: Vector2i in output_positions(m):
-			if _can_receive(op):
-				target = op
-				break
-		if target == Vector2i(-1, -1):
-			continue  # output blocked — hold the items
-		for hp: Vector2i in holds:
-			var c := get_cell(hp)
-			if String(c.get("kind", "")) == "resource":
-				_deliver(target, String(c.id))
-				set_cell(hp, {})
-				break
 
 
 ## moves at most once per step (movers are snapshotted up front).

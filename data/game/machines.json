@@ -7,9 +7,9 @@
       "color": "c9a24a",
       "cost": {},
       "inputs": [],
-      "outputs": [[1, 0]],
-      "holding": [[0, 1], [1, 1], [2, 0]],
-      "_note": "Free buildable. Harvested junk lands in the holding cells; when the output is clear one trickles out (built-in conveyor). These are the default offsets (pre-placed arm); a built arm rolls holding + output onto the 4 sides."
+      "outputs": [],
+      "holding": [[1, 0], [2, 0], [3, 0], [4, 0]],
+      "_note": "A 5-cell machine: core + 4 typed scrap slots along the bar (copper/steel/plastic/ceramic). Harvested scrap stacks into its matching slot (cell kind 'arm_slot'). Recyclers placed so an input cell touches a slot PULL that scrap straight out (no conveyor/insert). Pre-placed and persists."
     },
     "scrap_recycler": {
       "name": "Scrap Recycler",
@@ -35,10 +35,10 @@
     "frame_maker": { "name": "Frame Maker", "icon": "comp_maker_frame", "color": "9aa6b2", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
     "thermal_maker": { "name": "Thermal Maker", "icon": "comp_maker_thermal", "color": "e06a6a", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
 
-    "copper_weapon":  { "name": "Copper Blaster",  "icon": "weapon_copper",  "color": "c8722e", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "copper",  "ammo": "charge_cells",    "damage": 2, "cooldown": 0.25, "projectile_speed": 460, "cost": {"junk": 3}, "_note": "Found broken; repairs into a family weapon. Feed its ammo into the input slot; combat draws from there (see PlayerCombat / FactoryGrid.try_fire_weapon)." },
-    "steel_weapon":   { "name": "Steel Cannon",    "icon": "weapon_steel",   "color": "b9c2cc", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "steel",   "ammo": "steel_slugs",     "damage": 6, "cooldown": 0.70, "projectile_speed": 360, "cost": {"junk": 3} },
-    "plastic_weapon": { "name": "Resin Repeater",  "icon": "weapon_plastic", "color": "3fb6a8", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "plastic", "ammo": "resin_capsules",  "damage": 2, "cooldown": 0.45, "projectile_speed": 410, "pellets": 3, "spread_deg": 22, "cost": {"junk": 3}, "_note": "Spread: one trigger-pull fires 3 pellets in a fan (spread_deg)." },
-    "ceramic_weapon": { "name": "Ceramic Lance",   "icon": "weapon_ceramic", "color": "e0d7c0", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "ceramic", "ammo": "ceramic_charges", "damage": 4, "cooldown": 0.52, "projectile_speed": 420, "pierce": 2, "cost": {"junk": 3}, "_note": "Pierce: the shot passes through up to 2 enemies (hits 3 in a line)." },
+    "copper_weapon":  { "name": "Copper Blaster",  "icon": "weapon_copper",  "color": "c8722e", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "copper",  "ammo": "charge_cells",    "damage": 2, "cooldown": 0.25, "projectile_speed": 460, "cost": {"copper": 3}, "_note": "Found broken; repairs into a family weapon. Feed its ammo into the input slot; combat draws from there (see PlayerCombat / FactoryGrid.try_fire_weapon)." },
+    "steel_weapon":   { "name": "Steel Cannon",    "icon": "weapon_steel",   "color": "b9c2cc", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "steel",   "ammo": "steel_slugs",     "damage": 6, "cooldown": 0.70, "projectile_speed": 360, "cost": {"copper": 3} },
+    "plastic_weapon": { "name": "Resin Repeater",  "icon": "weapon_plastic", "color": "3fb6a8", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "plastic", "ammo": "resin_capsules",  "damage": 2, "cooldown": 0.45, "projectile_speed": 410, "pellets": 3, "spread_deg": 22, "cost": {"copper": 3}, "_note": "Spread: one trigger-pull fires 3 pellets in a fan (spread_deg)." },
+    "ceramic_weapon": { "name": "Ceramic Lance",   "icon": "weapon_ceramic", "color": "e0d7c0", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "ceramic", "ammo": "ceramic_charges", "damage": 4, "cooldown": 0.52, "projectile_speed": 420, "pierce": 2, "cost": {"copper": 3}, "_note": "Pierce: the shot passes through up to 2 enemies (hits 3 in a line)." },
 
 
     "grinder": {
@@ -47,7 +47,7 @@
       "color": "7a6f5d",
       "inputs": [[-1, 0]],
       "outputs": [[1, 0]],
-      "cost": { "junk": 3 }
+      "cost": { "copper": 3 }
     },
     "separator": {
       "name": "Separator",
@@ -63,7 +63,7 @@
       "color": "c86b3a",
       "inputs": [[-1, 0]],
       "outputs": [[1, 0]],
-      "cost": { "junk": 3 }
+      "cost": { "copper": 3 }
     },
     "press": {
       "name": "Press",
@@ -71,7 +71,7 @@
       "color": "8a8f97",
       "inputs": [[-1, 0]],
       "outputs": [[1, 0]],
-      "cost": { "junk": 3 }
+      "cost": { "copper": 3 }
     },
     "refiner": {
       "name": "Refiner",
@@ -79,7 +79,7 @@
       "color": "e08a3a",
       "inputs": [[-1, 0]],
       "outputs": [[1, 0]],
-      "cost": { "junk": 3 }
+      "cost": { "copper": 3 }
     },
     "circuit_printer": {
       "name": "Circuit Printer",
@@ -116,7 +116,7 @@
       "inputs": [[-1, 0]],
       "outputs": [],
       "capacity": 16,
-      "cost": { "junk": 3 },
+      "cost": { "copper": 3 },
       "_note": "A sink: items fed into its input stack up to `capacity` of ONE type. Load a full cache at the retrieval pad to ship the whole stack in one cartridge slot."
     }
   }

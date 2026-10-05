@@ -1,7 +1,6 @@
 {
-  "_comment": "Salvage economy (see docs Machines/Scrapables/Resources reference). JUNK is harvested from nodes via the scrapping minigame; MATERIALS come from processing junk in grid machines; PROCESSED/COMPONENTS are deeper craft outputs and ship targets. Keep raw types small; complexity comes from processing.",
+  "_comment": "Salvage economy (see docs Machines/Scrapables/Resources reference). TYPED SCRAP (copper_scrap/…) is harvested from piles into the Scrapper Arm; MATERIALS (copper/steel/plastic/ceramic) come from recyclers processing that scrap and are the repair currency; PROCESSED/COMPONENTS are deeper craft outputs and ship targets. (There is no generic 'junk' any more — everything is typed.)",
   "resources": {
-    "junk": { "name": "Junk", "icon": "junk", "color": "8a7f6d" },
     "copper": { "name": "Copper", "icon": "copper", "color": "c8722e" },
     "steel": { "name": "Steel", "icon": "steel", "color": "b9c2cc" },
     "plastic": { "name": "Plastic", "icon": "plastic", "color": "3fb6a8" },

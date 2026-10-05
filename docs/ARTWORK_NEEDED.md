@@ -50,7 +50,7 @@ coloured placeholder until a matching sprite id is added.
 
 **World stations / nodes (30×30 / ~20×20):** `scrap_node`, `e_waste_node`,
 `repair_station`, `objective_terminal`, `retrieval_pad`, `decode_station`,
-`respawn_beacon`, `power_relay` (buildable that lights up its room), `fabricator` (in-room workbench that crafts transport/caches), `component_exchange` (start-room station: sell components for credit toward a random machine).
+`respawn_beacon`, `power_relay` (buildable that lights up its room), `fabricator` (in-room workbench that crafts transport/caches), `component_exchange` (now spawns out in the map, gives 1 machine then goes dormant), `scrapbot` (the goblin's machine parked at the lair's exit — [F] to hop in & drive out, and again to extract; non-solid; ~30×30, wants a proper "parked mech" look), `system_terminal` (found in the map: upload Tech Data to the base & buy permanent machine upgrades).
 
 **Enemies / hazards:** `enemy_swarmer` (12×12), `enemy_brute` (26×26),
 `enemy_shooter` (18×18), `enemy_shot` (8×8), `wall_spawner` (32×32),
@@ -65,7 +65,7 @@ panels draw flat rectangles, so they're optional, not blocking.
 | --- | --- | --- |
 | `rust` | ~40×40 | Scrapping minigame: rust marker shown over a rusted 2×2 slot (a corner badge overlays the charges-to-expose number). Currently an orange placeholder |
 | `filter` | 28×28 | Filter conveyor buildable icon (routes one item type out the 90° side). Currently a coloured placeholder; the cell also draws its arrows + filtered-item icon in code |
-| `machine_crate` | 24×24 | The generic "unknown machine" crate shown for EVERY machine pickup found in a room — you only learn which machine it is from the F prompt. Currently a grey placeholder |
+| `machine_crate` | 24×24 | The generic "unknown machine" crate shown for EVERY machine/transport pickup found in a room (conveyors/splitters/filters are now found broken too) — you only learn which it is from the F prompt. Currently a grey placeholder |
 | `ui_slot` | 54×54 | Empty inventory / recipe cell background |
 | `ui_slot_module` | 54×54 | Recycler / module slot background (distinct from a normal cell) |
 | `ui_panel_bg` | ~560×400 | Full-window panel background (inventory & manufacturing) |
@@ -80,7 +80,8 @@ them instead of the flat squares.)
 
 ## Already covered (no action needed)
 
-- Player: `grobit` (from `grobit_atlas`, drawn facing up)
+- Player: `grobit` (from `grobit_atlas`, drawn facing up) — the driven scrapbot out in the run
+- Lair goblin: `goblin` (16×16, from `content/atlases/Goblin.png`, loaded as a loose sprite) — the on-foot character in the lair; drawn upright and flipped L/R, with a code-driven hop (no walk frames needed)
 - Gun overlay: `grobit_gun_01` (mounted on Grobit, aims at the shot target)
 - Enemy: `enemy_basic` (16×16, non-directional — never rotated)
 - Resources: `raw_material` (raw_scrap), `scrap_metal` (metal), `electronics`, `power_cell`, `tech_data`

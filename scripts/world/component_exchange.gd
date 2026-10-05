@@ -18,6 +18,8 @@ func can_interact() -> bool:
 
 
 func interaction_prompt() -> String:
+	if RunState.exchange_dormant():
+		return "[F] Component Exchange (dormant — spent for this run)"
 	return "[F] Component Exchange — sell components for a machine"
 
 

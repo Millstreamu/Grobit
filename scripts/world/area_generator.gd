@@ -26,6 +26,11 @@ var _TH := 0
 var _cell: Array = []          # room index per grid cell
 var _door_floors: Dictionary = {}  # the single wall tile carved for each passage
 var _doorways: Array = []           # [room a, room b, door tile] per shared door
+# The goblin lair (room 0): a fixed footprint pinned to the bottom-middle of the map whose
+# shape persists via MetaState, exiting the facility through one door at its top-middle.
+var _lair_cells: Array = []         # grid-cell indices room 0 owns
+var _lair_neighbor := -1            # the facility room directly above the lair's top-centre
+var _lair_door_tiles: Array = []    # Vector2i tiles carved for the lair's single exit door
 
 var _floors: Node2D
 var _wall_sprites: Node2D
@@ -43,8 +48,94 @@ var _salvage_loot: Array = []
 var _machine_finds: Dictionary = {}
 var _hazard_config: Dictionary = {}
 
+# Generation params, loaded by build_lair() and reused when the facility is generated later.
+# Deferred generation: the lair exists from the start (so the goblin can walk the base and
+# pick a run), and the facility only grows when the player hops in the scrapbot — see
+# build_lair() + generate_facility().
+var _room_count := 0
+var _rmin := 2
+var _rmax := 5
+var _door_width := 2
+var _loop_chance := 0.15
+var _enemy_min := 2
+var _enemy_max := 4
+var _room_weights: Dictionary = {}
+var _enemy_id := "basic_enemy"
+var _enemy_weights: Dictionary = {}
+var _run_seed := 0
+var _facility_built := false
 
+
+## One-shot generation (lair + facility) — used by tests and the playtest probe. The live
+## run instead calls build_lair() up front and generate_facility() when the player hops in.
 func build(area_id: String, run_seed: int) -> Vector2:
+	var start := build_lair(area_id)
+	generate_facility(run_seed)
+	return start
+
+
+## Phase 1: build ONLY the goblin lair (bottom-middle, persistent shape) and seal its single
+## exit with a locked door. The facility beyond it does not exist yet, so the player can walk
+## the base and choose a run; generate_facility() fills the map when they commit by hopping in.
+func build_lair(area_id: String) -> Vector2:
+	_load_params(area_id)
+	var n := _W * _H
+	_cell = []
+	_cell.resize(n)
+	_cell.fill(-1)
+	_lair_cells = _resolve_lair_cells()
+	for c: int in _lair_cells:
+		if c >= 0 and c < n:
+			_cell[c] = 0
+	_plan_lair_door_tiles(_door_width)
+	_build_lair_room()
+	_render_lair()
+	start_position = rooms[0].center()
+	rooms[0].reserve_navigation_tile(rooms[0].nearest_interior_tile(start_position))
+	rooms[0].build_trigger()
+	return start_position
+
+
+## Phase 2: grow the facility around the already-built lair and wire it up — regions, doors,
+## room types, tiles, population, the guaranteed machine chain, Exchange, Terminal and minimap.
+## Called once, when the player commits to a run. Safe to no-op if already built.
+func generate_facility(run_seed: int) -> void:
+	if _facility_built:
+		return
+	_facility_built = true
+	_run_seed = run_seed
+	var rng := RandomNumberGenerator.new()
+	rng.seed = run_seed
+
+	var room_count := _grow_regions(rng, _room_count, _rmin, _rmax)
+	var neighbours := _room_adjacency(room_count)
+	_resolve_lair_neighbor()
+	var connections := _connect_rooms(rng, room_count, neighbours, _loop_chance)
+	_carve_doors(rng, connections, _door_width)
+
+	# Room type assignment: start = room 0 (the lair), objective = farthest by graph distance.
+	var objective_index := _farthest_room(room_count, neighbours, 0)
+	var types := _assign_types(rng, room_count, 0, objective_index, _room_weights)
+
+	_build_rooms(run_seed, room_count, types, _enemy_min, _enemy_max, _enemy_id, _enemy_weights)
+	_render_facility()
+	for i in range(1, rooms.size()):
+		rooms[i].build_trigger()
+		_populate_room(rooms[i], _enemy_id)
+
+	_spawn_guaranteed_chain(rng)
+	_spawn_component_exchange(rng)
+	_spawn_system_terminal(rng)
+	_build_minimap_edges(connections)
+
+
+## Has the facility been generated yet (i.e. has the player hopped in)?
+func facility_ready() -> bool:
+	return _facility_built
+
+
+## Loads generation params from data and creates the render containers. Shared by both phases.
+func _load_params(area_id: String) -> void:
 	var area: Dictionary = GameData.area(area_id)
 	_floor_tile = String(area.get("floor_tile", "floor_clean"))
 	_wall_tile = String(area.get("wall_tile", "wall"))
@@ -57,21 +148,21 @@ func build(area_id: String, run_seed: int) -> Vector2:
 	_C = maxi(3, int(shape.get("cell_size", 5)))
 	_TW = _W * _C
 	_TH = _H * _C
-	var room_count := clampi(int(shape.get("room_count", 8)), 1, _W * _H)
-	var rmin := int(shape.get("room_min_cells", 2))
-	var rmax := int(shape.get("room_max_cells", 5))
-	var door_width := maxi(1, int(shape.get("door_width", 2)))
-	var loop_chance := float(shape.get("loop_chance", 0.15))
+	_room_count = clampi(int(shape.get("room_count", 8)), 1, _W * _H)
+	_rmin = int(shape.get("room_min_cells", 2))
+	_rmax = int(shape.get("room_max_cells", 5))
+	_door_width = maxi(1, int(shape.get("door_width", 2)))
+	_loop_chance = float(shape.get("loop_chance", 0.15))
 
 	# Gameplay params: prefer the tool-authored generation.json, fall back to area.json.
 	var generation: Dictionary = area.get("generation", {})
-	var enemy_min := int(shape.get("min_enemies", generation.get("min_enemies", 2)))
-	var enemy_max := int(shape.get("max_enemies", generation.get("max_enemies", 4)))
-	var weights: Dictionary = shape.get("room_type_weights", generation.get("room_type_weights", {"combat": 1}))
-	var enemy_weights: Dictionary = shape.get("enemy_weights", area.get("enemy_weights", {}))
-	var enemy_id := "basic_enemy"
+	_enemy_min = int(shape.get("min_enemies", generation.get("min_enemies", 2)))
+	_enemy_max = int(shape.get("max_enemies", generation.get("max_enemies", 4)))
+	_room_weights = shape.get("room_type_weights", generation.get("room_type_weights", {"combat": 1}))
+	_enemy_weights = shape.get("enemy_weights", area.get("enemy_weights", {}))
+	_enemy_id = "basic_enemy"
 	if area.get("enemies", []) is Array and not area.enemies.is_empty():
-		enemy_id = String(area.enemies[0])
+		_enemy_id = String(area.enemies[0])
 	# Gameplay content: prefer generation.json (tool-authored), fall back to area.json.
 	_harvest_config = shape.get("harvest", area.get("harvest", {}))
 	_repair_config = shape.get("repair", area.get("repair", {}))
@@ -80,6 +171,7 @@ func build(area_id: String, run_seed: int) -> Vector2:
 	_hazard_config = shape.get("hazard", area.get("hazard", {}))
 	_machine_finds = shape.get("machine_finds", area.get("machine_finds", {}))
 
+	_facility_built = false
 	_floors = _make_container("Floors", -2)
 	_wall_sprites = _make_container("WallSprites", -1)
 	_walls = StaticBody2D.new()
@@ -96,27 +188,127 @@ func build(area_id: String, run_seed: int) -> Vector2:
 	])
 	_doors_root = _make_container("Doors", -1)
 
-	var rng := RandomNumberGenerator.new()
-	rng.seed = run_seed
 
-	room_count = _grow_regions(rng, room_count, rmin, rmax)
-	var neighbours := _room_adjacency(room_count)
-	var connections := _connect_rooms(rng, room_count, neighbours, loop_chance)
-	_carve_doors(rng, connections, door_width)
+## Creates the lair's Room node (room 0, START) from its frozen cell footprint.
+func _build_lair_room() -> void:
+	rooms.clear()
+	var room := Room.new()
+	room.name = "Room_0"
+	room.room_type = Room.RoomType.START
+	room.cell_pixels = float(_C * tile)
+	room.tile_size = float(tile)
+	var cell_list: Array[Vector2i] = []
+	var centroid := Vector2.ZERO
+	for c: int in _lair_cells:
+		var v := Vector2i(c % _W, c / _W)
+		cell_list.append(v)
+		centroid += Vector2(v)
+	room.cells.assign(cell_list)
+	room.map_position = centroid / float(maxi(1, cell_list.size()))
+	room.enemy_id = _enemy_id
+	room.enemy_weights = _enemy_weights
+	room.salvage_loot = _salvage_loot
+	room.hazard_config = _hazard_config
+	room.enemy_min = 0  # the lair is a safe base — never spawns enemies
+	room.enemy_max = 0
+	room.rng.seed = 0x6C616972  # "lair"; the lair has no spawns, so the exact seed is moot
+	add_child(room)
+	rooms.append(room)
 
-	# Room type assignment: start = room 0, objective = farthest by graph distance.
-	var objective_index := _farthest_room(room_count, neighbours, 0)
-	var types := _assign_types(rng, room_count, 0, objective_index, weights)
 
-	_build_rooms(run_seed, room_count, types, enemy_min, enemy_max, enemy_id, enemy_weights)
-	_render_tiles()
-	for room: Room in rooms:
-		room.build_trigger()
-		_populate_room(room, enemy_id)
+## Renders the standalone lair: floor interior, a ringed wall boundary, and the single
+## top-middle exit as a locked door sealing the not-yet-generated facility.
+func _render_lair() -> void:
+	var floor_texture := ContentLibrary.get_tile(_floor_tile, Vector2i(tile, tile))
+	var wall_texture := ContentLibrary.get_tile(_wall_tile, Vector2i(tile, tile))
+	var lair_tiles := {}
+	for c: int in _lair_cells:
+		var cx := c % _W
+		var cy := c / _W
+		for ty in range(cy * _C, cy * _C + _C):
+			for tx in range(cx * _C, cx * _C + _C):
+				lair_tiles[Vector2i(tx, ty)] = true
+	var door_set := {}
+	for t: Vector2i in _lair_door_tiles:
+		door_set[t] = true
+	for key: Variant in lair_tiles:
+		var pos: Vector2i = key
+		var world := Vector2(pos.x * tile + tile * 0.5, pos.y * tile + tile * 0.5)
+		if door_set.has(pos):
+			_add_floor(floor_texture, world)
+		elif _lair_perimeter_wall(pos, lair_tiles):
+			_add_wall(wall_texture, world, pos.x, pos.y)
+		else:
+			_add_floor(floor_texture, world)
+			rooms[0].interior_tiles.append(world)
+	# The lair's one exit: a LOCKED door (solid) sealing the void where the facility will be.
+	# Unlocked only when the player hops in the scrapbot and drives out (see RunController).
+	for t: Vector2i in _lair_door_tiles:
+		var door := Door.new()
+		_doors_root.add_child(door)
+		door.global_position = Vector2(t) * tile + Vector2.ONE * tile * 0.5
+		door.lock()
+		rooms[0].doors.append(door)
+		var landing := Vector2(t.x * tile + tile * 0.5, (t.y + 1) * tile + tile * 0.5)
+		if rooms[0].interior_tiles.has(landing):
+			rooms[0].reserve_navigation_tile(landing)
 
-	_spawn_guaranteed_chain(rng)
-	_build_minimap_edges(connections)
-	return start_position
+
+## A lair tile is a boundary wall if any orthogonal neighbour is outside the lair (the void
+## where the facility will grow) or off-map. Matches what the full generator walls off.
+func _lair_perimeter_wall(pos: Vector2i, lair_tiles: Dictionary) -> bool:
+	for d: Vector2i in DIRS:
+		var np := pos + d
+		if np.x < 0 or np.y < 0 or np.x >= _TW or np.y >= _TH:
+			return true
+		if not lair_tiles.has(np):
+			return true
+	return false
+
+
+## Renders every NON-lair tile (the lair was drawn in phase 1) and creates the facility's
+## interior doors. Forces the tile just outside each lair door to open floor so the lair's
+## pre-placed exit always connects into the room that grew above it.
+func _render_facility() -> void:
+	var floor_texture := ContentLibrary.get_tile(_floor_tile, Vector2i(tile, tile))
+	var wall_texture := ContentLibrary.get_tile(_wall_tile, Vector2i(tile, tile))
+	var forced_floor := {}
+	for t: Vector2i in _lair_door_tiles:
+		forced_floor[Vector2i(t.x, t.y - 1)] = true
+	for ty in _TH:
+		for tx in _TW:
+			var r: int = _room_of_tile(tx, ty)
+			if r == 0:
+				continue  # the lair is already rendered
+			var world := Vector2(tx * tile + tile * 0.5, ty * tile + tile * 0.5)
+			var pos := Vector2i(tx, ty)
+			if forced_floor.has(pos):
+				_add_floor(floor_texture, world)
+				rooms[r].interior_tiles.append(world)
+				rooms[r].reserve_navigation_tile(world)
+			elif _door_floors.has(pos):
+				_add_floor(floor_texture, world)
+			elif _is_wall(tx, ty):
+				_add_wall(wall_texture, world, tx, ty)
+			else:
+				_add_floor(floor_texture, world)
+				rooms[r].interior_tiles.append(world)
+	# One shared door tile per facility passage (the lair's own door was made in phase 1).
+	for doorway: Array in _doorways:
+		var door := Door.new()
+		_doors_root.add_child(door)
+		var door_tile: Vector2i = doorway[2]
+		door.global_position = Vector2(door_tile) * tile + Vector2.ONE * tile * 0.5
+		for room_index_variant: Variant in [doorway[0], doorway[1]]:
+			var room_index := int(room_index_variant)
+			if room_index <= 0 or room_index >= rooms.size():
+				continue
+			var room := rooms[room_index]
+			room.doors.append(door)
+			for direction: Vector2i in DIRS:
+				var approach := door.global_position + Vector2(direction) * tile
+				if room.interior_tiles.has(approach):
+					room.reserve_navigation_tile(approach)
 
 
 ## Guarantees at least one broken machine of EACH category (Recycler / Ammo Maker /
@@ -158,7 +350,7 @@ func _spawn_guaranteed_chain(rng: RandomNumberGenerator) -> void:
 		pickup.broken = true
 		pickup.category = String(cat.get("category", "Machine"))
 		pickup.spec_pool = [spec_id]  # pre-decided: repair reveals exactly this
-		pickup.repair_cost = cat.get("repair_cost", {})
+		pickup.repair_cost = _repair_cost_for(String(cat.get("category", "Machine")), spec_id)
 		room.add_child(pickup)
 		pickup.global_position = position
 
@@ -171,15 +363,32 @@ func _grow_regions(rng: RandomNumberGenerator, room_count: int, rmin: int, rmax:
 	_cell.resize(n)
 	_cell.fill(-1)
 
-	var order := range(n)
-	_shuffle(order, rng)
-	var seeds := order.slice(0, room_count)
+	# Room 0 is the goblin lair: a persisted footprint pinned to the bottom-middle. Pre-claim
+	# its cells so the random regions grow AROUND it (they only ever claim -1 cells) and it
+	# never grows past its saved size/shape.
+	_lair_cells = _resolve_lair_cells()
+	for c: int in _lair_cells:
+		if c >= 0 and c < n:
+			_cell[c] = 0
+
+	# The remaining rooms seed on the free cells (room 0's seed is its fixed footprint).
+	var free: Array = []
+	for c in n:
+		if _cell[c] == -1:
+			free.append(c)
+	_shuffle(free, rng)
+	var others := mini(room_count - 1, free.size())
+	room_count = others + 1  # clamp if the grid can't host every requested room
+
 	var targets: Array = []
 	var counts: Array = []
-	for i in room_count:
+	# Room 0 is already at its final size: a target it meets keeps it out of the grow loop.
+	targets.append(maxi(1, _lair_cells.size()))
+	counts.append(maxi(1, _lair_cells.size()))
+	for i in range(1, room_count):
 		targets.append(rng.randi_range(rmin, maxi(rmin, rmax)))
 		counts.append(1)
-		_cell[seeds[i]] = i
+		_cell[free[i - 1]] = i
 
 	var grew := true
 	var guard := 0
@@ -207,7 +416,9 @@ func _grow_regions(rng: RandomNumberGenerator, room_count: int, rmin: int, rmax:
 				counts[r] += 1
 				grew = true
 
-	# Fill leftover unclaimed cells so the grid is fully packed (no gaps/corridors).
+	# Fill leftover unclaimed cells so the grid is fully packed (no gaps/corridors). The lair
+	# (room 0) is excluded from absorbing leftovers unless a cell touches nothing else, so its
+	# saved footprint stays exact.
 	var left := true
 	var guard2 := 0
 	while left and guard2 < n * 6:
@@ -219,16 +430,92 @@ func _grow_regions(rng: RandomNumberGenerator, room_count: int, rmin: int, rmax:
 			var x := c % _W
 			var y := c / _W
 			var near: Array = []
+			var near_lair := false
 			for d: Vector2i in DIRS:
 				var nx := x + d.x
 				var ny := y + d.y
-				if _in_grid(nx, ny) and _cell[ny * _W + nx] >= 0:
-					near.append(_cell[ny * _W + nx])
+				if not _in_grid(nx, ny):
+					continue
+				var r2: int = _cell[ny * _W + nx]
+				if r2 == 0:
+					near_lair = true
+				elif r2 > 0:
+					near.append(r2)
 			if not near.is_empty():
 				_cell[c] = near[rng.randi_range(0, near.size() - 1)]
+			elif near_lair:
+				_cell[c] = 0  # only the lair borders it — unavoidable
 			else:
 				left = true
 	return room_count
+
+
+# ------------------------------------------------------------- lair ----
+
+## The lair footprint for the current grid, freezing a fresh one into MetaState the first time.
+func _resolve_lair_cells() -> Array:
+	var saved: Array = MetaState.load_lair_cells(_W, _H)
+	if not saved.is_empty():
+		return saved
+	var cells := _default_lair_cells()
+	MetaState.save_lair_cells(cells, _W, _H)
+	return cells
+
+
+## A clean rectangle of cells centred horizontally and anchored to the bottom row — the
+## starting goblin base. Width matches the grid's parity so it sits dead-centre.
+func _default_lair_cells() -> Array:
+	var cw: int = mini(3 if _W % 2 == 1 else 2, _W)
+	var ch: int = mini(2, _H)
+	var x0 := (_W - cw) / 2
+	var y0 := _H - ch
+	var cells: Array = []
+	for j in ch:
+		for i in cw:
+			cells.append((y0 + j) * _W + (x0 + i))
+	return cells
+
+
+## Phase 1: picks the lair's single exit — up to `door_width` tiles centred on the lair's top
+## edge. Depends only on the lair geometry (the facility isn't grown yet), so the door can be
+## placed and sealed before generation. The room it opens into is resolved later.
+func _plan_lair_door_tiles(door_width: int) -> void:
+	_lair_door_tiles = []
+	_lair_neighbor = -1
+	if _lair_cells.is_empty():
+		return
+	var min_cy := 1 << 30
+	for c: int in _lair_cells:
+		min_cy = mini(min_cy, c / _W)
+	if min_cy <= 0:
+		return  # lair reaches the top edge — no facility can sit above it (shouldn't happen)
+	# Horizontal span of the lair's TOP cell row, in tiles.
+	var lo_cx := 1 << 30
+	var hi_cx := -1
+	for c: int in _lair_cells:
+		if c / _W == min_cy:
+			lo_cx = mini(lo_cx, c % _W)
+			hi_cx = maxi(hi_cx, c % _W)
+	var top_ty := min_cy * _C  # the lair's topmost tile row (its top wall, facing the facility)
+	var span_lo := lo_cx * _C
+	var span_hi := (hi_cx + 1) * _C - 1
+	var center := (span_lo + span_hi) / 2
+	var want: int = clampi(door_width, 1, span_hi - span_lo + 1)
+	var start_tx: int = clampi(center - want / 2, span_lo, span_hi - want + 1)
+	for k in want:
+		_lair_door_tiles.append(Vector2i(start_tx + k, top_ty))
+
+
+## Phase 2: now that the facility has grown, record which room sits directly above the lair's
+## door — the room its exit connects into.
+func _resolve_lair_neighbor() -> void:
+	_lair_neighbor = -1
+	if _lair_door_tiles.is_empty():
+		return
+	var mid: Vector2i = _lair_door_tiles[_lair_door_tiles.size() / 2]
+	if mid.y - 1 < 0:
+		return
+	_lair_neighbor = _room_of_tile(mid.x, mid.y - 1)
 
 
 func _room_adjacency(room_count: int) -> Array:
@@ -255,22 +542,53 @@ func _connect_rooms(rng: RandomNumberGenerator, room_count: int, neighbours: Arr
 	var seen: Array = []
 	seen.resize(room_count)
 	seen.fill(false)
-	var queue: Array = [0]
+	# The lair (room 0) joins the map ONLY through its fixed top-centre door, added at the end.
+	# Span the facility WITHOUT it so excluding it from the tree can never split the map.
 	seen[0] = true
+	var start_room: int = _lair_neighbor if _lair_neighbor >= 1 else (1 if room_count > 1 else 0)
+	var queue: Array = [start_room]
+	seen[start_room] = true
 	while not queue.is_empty():
 		var r: int = queue.pop_front()
 		var list: Array = neighbours[r].keys()
 		_shuffle(list, rng)
 		for nb: int in list:
+			if nb == 0:
+				continue
 			if not seen[nb]:
 				seen[nb] = true
 				connected[_edge_key(r, nb)] = [r, nb]
 				queue.append(nb)
-	# Extra loop doors.
+	# Reconnect any facility room the lair-free tree missed (adjacent-to-seen first).
+	var progress := true
+	while progress:
+		progress = false
+		for r in range(1, room_count):
+			if seen[r]:
+				continue
+			for nb: int in neighbours[r].keys():
+				if nb != 0 and seen[nb]:
+					connected[_edge_key(r, nb)] = [r, nb]
+					seen[r] = true
+					progress = true
+					break
+	# Pathological fallback: a room walled off behind the lair connects through it.
+	for r in range(1, room_count):
+		if not seen[r]:
+			connected[_edge_key(0, r)] = [0, r]
+			seen[r] = true
+	# Extra loop doors — never onto the lair, which keeps its single entry.
 	for a in room_count:
+		if a == 0:
+			continue
 		for b: int in neighbours[a].keys():
+			if b == 0:
+				continue
 			if a < b and not connected.has(_edge_key(a, b)) and rng.randf() < loop_chance:
 				connected[_edge_key(a, b)] = [a, b]
+	# The lair's one connection: its fixed top-centre door into the facility.
+	if _lair_neighbor >= 1:
+		connected[_edge_key(0, _lair_neighbor)] = [0, _lair_neighbor]
 	return connected.values()
 
 
@@ -302,6 +620,10 @@ func _carve_doors(rng: RandomNumberGenerator, connections: Array, door_width: in
 		var b: int = edge[1]
 		var lo := mini(a, b)
 		var hi := maxi(a, b)
+		# The lair (room 0) already has its sealed top-middle door from phase 1 — skip it here
+		# (its landing is forced open in _render_facility). Only facility passages are carved.
+		if lo == 0:
+			continue
 		# The single shared wall lives on the lower room's boundary tiles adjacent
 		# to the higher room. A tile only makes a usable door when the floor on
 		# BOTH sides is open — so corner tiles (a wall on the approach) are skipped
@@ -342,8 +664,10 @@ func _carve_doors(rng: RandomNumberGenerator, connections: Array, door_width: in
 
 # --------------------------------------------------------------- build ----
 
+## Builds the FACILITY room nodes (indices 1..). The lair (room 0) already exists from
+## build_lair(), so it is kept in place while any previous facility rooms are dropped.
 func _build_rooms(run_seed: int, room_count: int, types: Array, enemy_min: int, enemy_max: int, enemy_id: String, enemy_weights: Dictionary) -> void:
-	# Create empty Room nodes with their owned cells; tiles/doors filled by _render_tiles.
+	# Owned cells per room (tiles/doors are filled by _render_facility).
 	var cell_lists: Array = []
 	var centroids: Array = []
 	for i in room_count:
@@ -355,8 +679,9 @@ func _build_rooms(run_seed: int, room_count: int, types: Array, enemy_min: int, 
 			cell_lists[r].append(Vector2i(x, y))
 			centroids[r] += Vector2(x, y)
 
-	rooms.clear()
-	for i in room_count:
+	rooms.resize(1)  # keep the lair (rooms[0]); rebuild the facility fresh
+	objective_room = null
+	for i in range(1, room_count):
 		var room := Room.new()
 		room.name = "Room_%d" % i
 		room.room_type = types[i]
@@ -380,44 +705,6 @@ func _build_rooms(run_seed: int, room_count: int, types: Array, enemy_min: int, 
 		rooms.append(room)
 		if types[i] == Room.RoomType.OBJECTIVE:
 			objective_room = room
-
-
-func _render_tiles() -> void:
-	var floor_texture := ContentLibrary.get_tile(_floor_tile, Vector2i(tile, tile))
-	var wall_texture := ContentLibrary.get_tile(_wall_tile, Vector2i(tile, tile))
-	for ty in _TH:
-		for tx in _TW:
-			var r: int = _room_of_tile(tx, ty)
-			var world := Vector2(tx * tile + tile * 0.5, ty * tile + tile * 0.5)
-			var pos := Vector2i(tx, ty)
-			if _door_floors.has(pos):
-				_add_floor(floor_texture, world)
-			elif _is_wall(tx, ty):
-				_add_wall(wall_texture, world, tx, ty)
-			else:
-				_add_floor(floor_texture, world)
-				rooms[r].interior_tiles.append(world)
-	# One shared door tile per passage, owned by both adjacent rooms so either can
-	# lock the single physical barrier.
-	for doorway: Array in _doorways:
-		var door := Door.new()
-		_doors_root.add_child(door)
-		var door_tile: Vector2i = doorway[2]
-		door.global_position = Vector2(door_tile) * tile + Vector2.ONE * tile * 0.5
-		for room_index_variant: Variant in [doorway[0], doorway[1]]:
-			var room_index := int(room_index_variant)
-			var room := rooms[room_index]
-			room.doors.append(door)
-			# The carved door is not an interior tile, but its floor landing is.
-			# Reserve every adjacent tile owned by this room so solid props cannot
-			# seal the one-tile passage.
-			for direction: Vector2i in DIRS:
-				var approach := door.global_position + Vector2(direction) * tile
-				if room.interior_tiles.has(approach):
-					room.reserve_navigation_tile(approach)
-	# Player starts in the middle of the start room.
-	start_position = rooms[0].center()
-	rooms[0].reserve_navigation_tile(rooms[0].nearest_interior_tile(start_position))
 
 
 func _add_floor(texture: Texture2D, world: Vector2) -> void:
@@ -550,10 +837,38 @@ func _maybe_spawn_machine(room: Room) -> void:
 		pickup.category = String(cat.get("category", "Machine"))
 		# FIXED specialisation: pre-roll one id now so the pile knows (and reveals) exactly
 		# what it becomes. This stops fishing for a family by repairing many random makers.
-		pickup.spec_pool = [_pick_spec(cat.get("pool", []), room.rng)]
-		pickup.repair_cost = cat.get("repair_cost", {})
+		var spec := _pick_spec(cat.get("pool", []), room.rng)
+		pickup.spec_pool = [spec]
+		pickup.repair_cost = _repair_cost_for(String(cat.get("category", "Machine")), spec)
 		room.add_child(pickup)
 		pickup.global_position = position
+
+
+## Material tier order (the tech ladder): steel 1 → copper 2 → plastic 3 → ceramic 4.
+const _MATERIAL_TIER := {"steel": 1, "copper": 2, "plastic": 3, "ceramic": 4}
+
+
+## The material family a machine id belongs to (its prefix), or "" for a cross-tier machine.
+func _material_of(def_id: String) -> String:
+	for mat: String in _MATERIAL_TIER:
+		if def_id.begins_with(mat + "_"):
+			return mat
+	return ""
+
+
+## Repair cost escalates up the ladder, always paid in the PRIOR tier's refined material so you
+## must establish each tier before the next: copper-tier machines cost steel, plastic cost
+## copper, ceramic cost plastic. Steel-tier is cheap, transport cheapest, cross-tier defaults
+## to steel. (Placeholder numbers — tune freely.)
+func _repair_cost_for(category: String, spec_id: String) -> Dictionary:
+	if category == "Transport":
+		return {"steel": 1}
+	match int(_MATERIAL_TIER.get(_material_of(spec_id), 0)):
+		1: return {"steel": 2}
+		2: return {"steel": 4}
+		3: return {"copper": 4}
+		4: return {"plastic": 4}
+	return {"steel": 3}  # component makers / anything without a material family
 
 
 ## Picks a category by its `weight` (default 1). Ammo Makers carry a low weight so they
@@ -593,7 +908,7 @@ func _default_find_categories() -> Array:
 		{
 			"category": "Recycler",
 			"weight": 3,
-			"repair_cost": {"junk": 2},
+			"repair_cost": {"copper": 2},
 			"pool": [
 				{"id": "copper_recycler", "weight": 1},
 				{"id": "steel_recycler", "weight": 1},
@@ -604,7 +919,7 @@ func _default_find_categories() -> Array:
 		{
 			"category": "Ammo Maker",
 			"weight": 1,
-			"repair_cost": {"junk": 3},
+			"repair_cost": {"copper": 3},
 			"pool": [
 				{"id": "copper_ammo_maker", "weight": 1},
 				{"id": "steel_ammo_maker", "weight": 1},
@@ -615,7 +930,7 @@ func _default_find_categories() -> Array:
 		{
 			"category": "Component Maker",
 			"weight": 3,
-			"repair_cost": {"junk": 4},
+			"repair_cost": {"copper": 4},
 			"pool": [
 				{"id": "coupling_maker", "weight": 1},
 				{"id": "control_maker", "weight": 1},
@@ -627,7 +942,7 @@ func _default_find_categories() -> Array:
 			"category": "Weapon",
 			"weight": 2,
 			"no_guarantee": true,  # an optional upgrade over the basic gun, never guaranteed
-			"repair_cost": {"junk": 3},
+			"repair_cost": {"copper": 3},
 			"pool": [
 				{"id": "copper_weapon", "weight": 1},
 				{"id": "steel_weapon", "weight": 1},
@@ -635,7 +950,58 @@ func _default_find_categories() -> Array:
 				{"id": "ceramic_weapon", "weight": 1},
 			],
 		},
+		{
+			"category": "Transport",
+			"weight": 3,
+			"no_guarantee": true,  # transport is a found-and-repaired item now, never guaranteed
+			"repair_cost": {"copper": 1},
+			"pool": [
+				{"id": "__conveyor", "weight": 3},
+				{"id": "__splitter", "weight": 1},
+				{"id": "__filter", "weight": 1},
+			],
+		},
 	]
+
+
+## Exactly one Component Exchange spawns out in the map (never the start room). It gives a
+## limited number of machines per run, then goes dormant (see RunState.exchange_dormant).
+func _spawn_component_exchange(rng: RandomNumberGenerator) -> void:
+	var non_start: Array = []
+	for r: Room in rooms:
+		if r.room_type != Room.RoomType.START and not r.interior_tiles.is_empty():
+			non_start.append(r)
+	if non_start.is_empty():
+		return
+	var start := rng.randi_range(0, non_start.size() - 1)
+	for offset in non_start.size():
+		var room: Room = non_start[(start + offset) % non_start.size()]
+		var position: Variant = room.claim_random_prop_tile()
+		if position != null:
+			var exchange := ComponentExchange.new()
+			room.add_child(exchange)
+			exchange.global_position = position
+			return
+
+
+## Exactly one System Terminal spawns out in the map (never the start room) — where you
+## upload Tech Data to the base and buy permanent machine upgrades.
+func _spawn_system_terminal(rng: RandomNumberGenerator) -> void:
+	var non_start: Array = []
+	for r: Room in rooms:
+		if r.room_type != Room.RoomType.START and not r.interior_tiles.is_empty():
+			non_start.append(r)
+	if non_start.is_empty():
+		return
+	var start := rng.randi_range(0, non_start.size() - 1)
+	for offset in non_start.size():
+		var room: Room = non_start[(start + offset) % non_start.size()]
+		var position: Variant = room.claim_random_prop_tile()
+		if position != null:
+			var terminal := SystemTerminal.new()
+			room.add_child(terminal)
+			terminal.global_position = position
+			return
 
 
 ## A Fabricator workbench turns up in a few rooms (see FabricatorStation).

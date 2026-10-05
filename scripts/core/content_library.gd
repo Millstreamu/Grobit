@@ -14,6 +14,12 @@ const ATLAS_PATHS := [
 ]
 const TILESET_PATH := "res://content/tilesets/prototype/prototype_environment.json"
 
+# Standalone PNGs (not part of an atlas sheet) registered under a stable sprite id. Loaded
+# via Image so they work headless even before Godot has generated an .import for them.
+const LOOSE_SPRITES := {
+	"goblin": "res://content/atlases/Goblin.png",
+}
+
 var tileset := TilesetContent.new()
 var _atlases: Array[AtlasContent] = []
 var _icon_lookup: Dictionary = {}  # sprite id -> AtlasTexture (highest priority)
@@ -33,6 +39,17 @@ func _ready() -> void:
 		for sprite_name: String in atlas.sprites:
 			if not _icon_lookup.has(sprite_name):  # first (highest priority) wins
 				_icon_lookup[sprite_name] = atlas.get_sprite(sprite_name)
+	for sprite_id: String in LOOSE_SPRITES:
+		if _icon_lookup.has(sprite_id):
+			continue  # an atlas already defines it — the sheet wins
+		var path: String = LOOSE_SPRITES[sprite_id]
+		if not FileAccess.file_exists(path):
+			continue
+		var image := Image.new()
+		if image.load(path) == OK:
+			_icon_lookup[sprite_id] = ImageTexture.create_from_image(image)
+		else:
+			push_warning("ContentLibrary could not load loose sprite '%s' from %s" % [sprite_id, path])
 	if not tileset.load_json(TILESET_PATH):
 		push_error("ContentLibrary could not load tileset: %s" % tileset.last_error)
 
