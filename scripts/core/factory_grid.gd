@@ -534,9 +534,19 @@ func can_relocate(mi: int, new_core: Vector2i, slot_offsets: Array) -> bool:
 	var own := {Vector2i(m.core): true}
 	for p: Variant in m.get("slots", []):
 		own[Vector2i(p)] = true
+	for p: Vector2i in holding_positions(m):
+		if String(get_cell(p).get("kind", "")) == "arm_slot":
+			own[p] = true
 	for o: Vector2i in body_offsets_of(m):
 		own[Vector2i(m.core) + o] = true
-	var footprint := _relocate_footprint(new_core, slot_offsets, body_offsets_of(m))
+	var claimed_offsets: Array = slot_offsets.duplicate()
+	# The Scrapper Arm's typed holding cells are claimed machine cells, but they are
+	# deliberately not generic upgrade slots in m.slots. Move/check them separately.
+	for offset: Vector2i in hold_offsets_of(m):
+		var old_pos := Vector2i(m.core) + offset
+		if String(get_cell(old_pos).get("kind", "")) == "arm_slot":
+			claimed_offsets.append(offset)
+	var footprint := _relocate_footprint(new_core, claimed_offsets, body_offsets_of(m))
 	var displaced := 0
 	for p: Vector2i in footprint:
 		if not in_bounds(p):
@@ -600,20 +610,33 @@ func move_offsets(mi: int) -> Array:
 
 
 ## Shared relocation: vacates the old body, shifts aside covered items, lays the body
-## at `new_core` with the given slot offsets, and remaps module positions by the move
-## delta. Does NOT change the level (callers decide).
+## at `new_core` with the given slot offsets, translates the Scrapper Arm's stateful
+## holding cells, and remaps module positions by the move delta. Does NOT change the
+## level (callers decide).
 func _relocate(mi: int, new_core: Vector2i, slot_offsets: Array) -> void:
 	var m: Dictionary = machines[mi]
 	var old_core := Vector2i(m.core)
 	var delta := new_core - old_core
 	var body_offsets: Array = body_offsets_of(m)
-	var footprint := _relocate_footprint(new_core, slot_offsets, body_offsets)
+	# Arm holding cells contain counts and type assignments, so capture their full
+	# dictionaries before clearing an overlapping old/new footprint.
+	var arm_cells := {}
+	for offset: Vector2i in hold_offsets_of(m):
+		var old_pos := old_core + offset
+		var cell := get_cell(old_pos)
+		if String(cell.get("kind", "")) == "arm_slot":
+			arm_cells[offset] = cell.duplicate(true)
+	var claimed_offsets: Array = slot_offsets.duplicate()
+	claimed_offsets.append_array(arm_cells.keys())
+	var footprint := _relocate_footprint(new_core, claimed_offsets, body_offsets)
 	# Vacate the old body (core + extras + slots) first so it can overlap the new spot.
 	set_cell(old_core, {})
 	for o: Vector2i in body_offsets:
 		set_cell(old_core + o, {})
 	for p: Variant in m.get("slots", []):
 		set_cell(Vector2i(p), {})
+	for offset: Vector2i in arm_cells:
+		set_cell(old_core + offset, {})
 	# Shift aside any items the new footprint would cover.
 	for p: Vector2i in footprint:
 		if String(get_cell(p).get("kind", "")) == "resource":
@@ -630,6 +653,8 @@ func _relocate(mi: int, new_core: Vector2i, slot_offsets: Array) -> void:
 		var p := new_core + o
 		set_cell(p, {"kind": "machine_slot", "mi": mi})
 		m.slots.append(p)
+	for offset: Vector2i in arm_cells:
+		set_cell(new_core + offset, arm_cells[offset])
 	for entry: Dictionary in m.get("modules", []):
 		entry["pos"] = Vector2i(entry.get("pos", Vector2i.ZERO)) + delta
 
