@@ -23,22 +23,26 @@ extends RefCounted
 ## Each permanent machine-upgrade level (MetaState.machine_level) multiplies a recipe's
 ## craft time by this — faster processing as you invest Tech Data at a System Terminal.
 const SPEED_PER_LEVEL := 0.85
-## Extra slot cells claimed per level-up (RNG-shaped, must fit — no rotation).
-## (Leveling no longer grows slots in-game; kept for the grid slot API + its test.)
-const SLOTS_PER_LEVEL := 2
 ## Seconds between conveyor/splitter transport steps (item moves one cell per step).
 const CONVEYOR_INTERVAL := 0.35
 
-## The Scrapper Arm is a 5-cell machine: a core + 4 typed scrap slots (cell kind "arm_slot",
-## one per type, laid out along the holding offsets in TIER ORDER). Harvested scrap stacks into
-## its matching slot; an adjacent recycler pulls it straight out. Slots stack to ARM_SLOT_MAX.
-##
-## The arm's LEVEL (MetaState.machine_level) gates how many slots are live: L1 = steel only,
-## L2 = +copper, L3 = +plastic, L4 = +ceramic. A scrap type's tier is its index here + 1, so a
-## slot is unlocked when arm_level >= that tier. Locked slots can't be harvested into (inert).
-const ARM_SLOT_TYPES := ["steel_scrap", "copper_scrap", "plastic_scrap", "ceramic_scrap"]
-const ARM_SLOT_MAX := 99
+## Scrap tiers, in order. A scrap type's tier is its index here + 1 (steel 1 … ceramic 4). What a
+## goblin can scrap is gated by its TOOL's tier (see HarvesterGoblin), not by the factory.
+const SCRAP_ORDER := ["steel_scrap", "copper_scrap", "plastic_scrap", "ceramic_scrap"]
+## A scrap INSERTER is a single placeable cell (kind "inserter") pinned to one scrap type: when a
+## goblin hauls that type home it stacks into the inserter instead of filling the grid top-left,
+## so you can park a type right where a recycler eats it (an adjacent recycler pulls from it).
+const INSERTER_MAX := 99
 const _NEIGHBORS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+
+
+## A scrap type's tier (1 = steel … 4 = ceramic), or 0 if it isn't one of the four scraps.
+static func scrap_tier(id: String) -> int:
+	return SCRAP_ORDER.find(id) + 1
+
+
+static func is_scrap(id: String) -> bool:
+	return SCRAP_ORDER.has(id)
 
 var cols: int
 var rows: int
@@ -104,7 +108,7 @@ func is_core(p: Vector2i) -> bool:
 ## Nothing else may be placed/dropped there.
 func is_machine_cell(p: Vector2i) -> bool:
 	var kind := String(get_cell(p).get("kind", ""))
-	return kind == "machine" or kind == "machine_slot" or kind == "machine_body" or kind == "arm_slot"
+	return kind == "machine" or kind == "machine_slot" or kind == "machine_body"
 
 
 ## How many tiles a machine's core occupies — the more ports (complexity), the bigger.
@@ -331,7 +335,7 @@ func count_empty() -> int:
 func place_machine_layout(def_id: String, core: Vector2i, in_offsets: Array, out_offsets: Array, hold_offsets: Array = [], body_offsets: Array = []) -> int:
 	if not can_place_layout(def_id, core, in_offsets, out_offsets, hold_offsets, body_offsets):
 		return -1
-	machines.append({"def_id": def_id, "core": core, "progress": 0.0, "progress_ratio": 0.0, "working": false, "level": 1, "slots": [], "modules": [], "status": "idle", "status_detail": "", "in_offsets": in_offsets.duplicate(), "out_offsets": out_offsets.duplicate(), "hold_offsets": hold_offsets.duplicate(), "body_offsets": body_offsets.duplicate()})
+	machines.append({"def_id": def_id, "core": core, "progress": 0.0, "progress_ratio": 0.0, "working": false, "slots": [], "status": "idle", "status_detail": "", "in_offsets": in_offsets.duplicate(), "out_offsets": out_offsets.duplicate(), "hold_offsets": hold_offsets.duplicate(), "body_offsets": body_offsets.duplicate()})
 	var mi := machines.size() - 1
 	# Shift aside any items under the body, then claim the tiles (core + extras).
 	for offset: Vector2i in [Vector2i.ZERO] + body_offsets:
@@ -344,25 +348,13 @@ func place_machine_layout(def_id: String, core: Vector2i, in_offsets: Array, out
 
 ## Places a machine; returns its index, or -1 if it doesn't fit. An item on the core
 ## cell is shifted aside rather than blocking the placement.
-## Places the Scrapper Arm and turns its 4 holding cells into typed scrap slots. Returns the
-## machine index, or -1 if it won't fit.
-func place_scrapper_arm(core: Vector2i) -> int:
-	var mi := place_machine("scrapper_arm", core)
-	if mi < 0:
-		return -1
-	var offsets := hold_offsets_of(machines[mi])
-	for i in mini(offsets.size(), ARM_SLOT_TYPES.size()):
-		set_cell(core + Vector2i(offsets[i]), {"kind": "arm_slot", "scrap": ARM_SLOT_TYPES[i], "count": 0})
-	return mi
-
-
 func place_machine(def_id: String, core: Vector2i) -> int:
 	if String(get_cell(core).get("kind", "")) == "resource":
 		if not can_place_displacing(def_id, core) or not displace_item(core):
 			return -1
 	if not can_place(def_id, core):
 		return -1
-	machines.append({"def_id": def_id, "core": core, "progress": 0.0, "progress_ratio": 0.0, "working": false, "level": 1, "slots": [], "modules": [], "status": "idle", "status_detail": ""})
+	machines.append({"def_id": def_id, "core": core, "progress": 0.0, "progress_ratio": 0.0, "working": false, "slots": [], "status": "idle", "status_detail": ""})
 	var mi := machines.size() - 1
 	set_cell(core, {"kind": "machine", "mi": mi})
 	return mi
@@ -401,113 +393,13 @@ func machine_at(p: Vector2i) -> int:
 	return -1
 
 
-func level_of(mi: int) -> int:
-	return int(machines[mi].get("level", 1)) if mi >= 0 and mi < machines.size() else 0
-
-
-## Raises a machine's level by one IN PLACE — no footprint/slot change, no relocation.
-## (Leveling used to grow the machine's slot shape; now it just bumps the number. What a
-## higher level does beyond the current speed-up / recipe-gating is still to be designed.)
-func level_up_in_place(mi: int) -> int:
-	if mi < 0 or mi >= machines.size():
-		return 0
-	machines[mi]["level"] = level_of(mi) + 1
-	return level_of(mi)
-
-
-## Absolute positions of a machine's extra slot cells (claimed by leveling).
+## Absolute positions of a machine's extra slot cells (legacy — machines no longer gain slots,
+## so this is always empty; kept only for the relocation/outline code that iterates it).
 func slot_positions(m: Dictionary) -> Array:
 	var out: Array = []
 	for p: Variant in m.get("slots", []):
 		out.append(p)
 	return out
-
-
-## Rolls a connected RNG-shaped blob of `count` empty cells adjacent to the
-## machine's claimed body (core + existing slots). Returns the chosen absolute
-## cells (fewer than `count` if the machine is boxed in). No rotation: the shape is
-## whatever the roll produced; the player reshuffles or fits it as-is.
-func roll_upgrade(mi: int, count: int, rng: RandomNumberGenerator) -> Array:
-	var m: Dictionary = machines[mi]
-	var body: Array = [Vector2i(m.core)]
-	for p: Variant in m.get("slots", []):
-		body.append(p)
-	# Never grow into any machine's input/output/holding cells — claiming those
-	# would break an assembly line. (Empty resource cells are fair game.)
-	var reserved := {}
-	for other: Dictionary in machines:
-		if bool(other.get("removed", false)):
-			continue
-		for p: Vector2i in input_positions(other):
-			reserved[p] = true
-		for p: Vector2i in output_positions(other):
-			reserved[p] = true
-		for p: Vector2i in holding_positions(other):
-			reserved[p] = true
-	var shape: Array = []
-	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-	for _n in count:
-		var frontier: Array = []
-		for base: Vector2i in body + shape:
-			for d: Vector2i in dirs:
-				var p: Vector2i = base + d
-				if in_bounds(p) and get_cell(p).is_empty() and not reserved.has(p) and not shape.has(p) and not frontier.has(p):
-					frontier.append(p)
-		if frontier.is_empty():
-			break
-		shape.append(frontier[rng.randi() % frontier.size()])
-	return shape
-
-
-## True if a rolled shape can be applied (right size and every cell still free).
-func upgrade_fits(shape: Array, count: int) -> bool:
-	if shape.size() != count:
-		return false
-	for p: Vector2i in shape:
-		if not in_bounds(p) or not get_cell(p).is_empty():
-			return false
-	return true
-
-
-## Claims the shape's cells for the machine and bumps its level.
-func apply_upgrade(mi: int, shape: Array) -> void:
-	var m: Dictionary = machines[mi]
-	for p: Vector2i in shape:
-		set_cell(p, {"kind": "machine_slot", "mi": mi})
-		m.slots.append(p)
-	m.level = int(m.get("level", 1)) + 1
-
-
-## Rolls the level-up's new slots as a connected blob of OFFSETS relative to the
-## machine's core (attached to its body: core + existing slots), avoiding the
-## machine's own input/output offsets. Unlike roll_upgrade this ignores the grid's
-## current occupancy — it is a rigid shape the player then positions somewhere it
-## fits (see can_relocate / relocate_upgraded), so a boxed-in machine can level by
-## relocating instead of being stuck.
-func roll_upgrade_offsets(mi: int, count: int, rng: RandomNumberGenerator) -> Array:
-	var m: Dictionary = machines[mi]
-	var body := {Vector2i.ZERO: true}
-	for o: Vector2i in body_offsets_of(m):
-		body[o] = true
-	for p: Variant in m.get("slots", []):
-		body[Vector2i(p) - Vector2i(m.core)] = true
-	var reserved := {}  # never put a slot on an input/output offset
-	for offset: Vector2i in in_offsets_of(m) + out_offsets_of(m):
-		reserved[offset] = true
-	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-	var shape: Array = []
-	for _n in count:
-		var frontier: Array = []
-		for base_v: Variant in body.keys() + shape:
-			var base: Vector2i = base_v
-			for d: Vector2i in dirs:
-				var o := base + d
-				if not body.has(o) and not reserved.has(o) and not shape.has(o) and not frontier.has(o):
-					frontier.append(o)
-		if frontier.is_empty():
-			break
-		shape.append(frontier[rng.randi() % frontier.size()])
-	return shape
 
 
 ## Absolute cells a machine's solid footprint would occupy at `new_core`: the core,
@@ -534,18 +426,9 @@ func can_relocate(mi: int, new_core: Vector2i, slot_offsets: Array) -> bool:
 	var own := {Vector2i(m.core): true}
 	for p: Variant in m.get("slots", []):
 		own[Vector2i(p)] = true
-	for p: Vector2i in holding_positions(m):
-		if String(get_cell(p).get("kind", "")) == "arm_slot":
-			own[p] = true
 	for o: Vector2i in body_offsets_of(m):
 		own[Vector2i(m.core) + o] = true
 	var claimed_offsets: Array = slot_offsets.duplicate()
-	# The Scrapper Arm's typed holding cells are claimed machine cells, but they are
-	# deliberately not generic upgrade slots in m.slots. Move/check them separately.
-	for offset: Vector2i in hold_offsets_of(m):
-		var old_pos := Vector2i(m.core) + offset
-		if String(get_cell(old_pos).get("kind", "")) == "arm_slot":
-			claimed_offsets.append(offset)
 	var footprint := _relocate_footprint(new_core, claimed_offsets, body_offsets_of(m))
 	var displaced := 0
 	for p: Vector2i in footprint:
@@ -582,18 +465,7 @@ func can_relocate(mi: int, new_core: Vector2i, slot_offsets: Array) -> bool:
 	return true
 
 
-## Moves machine `mi` to `new_core`, claiming the given full slot offsets as its
-## slots and bumping its level. Existing slots (and their modules) translate rigidly
-## by the move delta; items under the new body are shifted to free cells. Caller must
-## have checked can_relocate.
-func relocate_upgraded(mi: int, new_core: Vector2i, slot_offsets: Array) -> void:
-	_relocate(mi, new_core, slot_offsets)
-	var m: Dictionary = machines[mi]
-	m.level = int(m.get("level", 1)) + 1
-
-
-## Moves machine `mi` to `new_core` keeping its current slots (and their modules) and
-## its level — a plain relocation, no upgrade. Caller must have checked can_relocate
+## Moves machine `mi` to `new_core` (a plain relocation). Caller must have checked can_relocate
 ## with the machine's existing slot offsets (see move_offsets).
 func move_machine(mi: int, new_core: Vector2i) -> void:
 	_relocate(mi, new_core, move_offsets(mi))
@@ -610,24 +482,14 @@ func move_offsets(mi: int) -> Array:
 
 
 ## Shared relocation: vacates the old body, shifts aside covered items, lays the body
-## at `new_core` with the given slot offsets, translates the Scrapper Arm's stateful
-## holding cells, and remaps module positions by the move delta. Does NOT change the
-## level (callers decide).
+## at `new_core` with the given slot offsets, and remaps module positions by the move
+## delta. Does NOT change the level (callers decide).
 func _relocate(mi: int, new_core: Vector2i, slot_offsets: Array) -> void:
 	var m: Dictionary = machines[mi]
 	var old_core := Vector2i(m.core)
 	var delta := new_core - old_core
 	var body_offsets: Array = body_offsets_of(m)
-	# Arm holding cells contain counts and type assignments, so capture their full
-	# dictionaries before clearing an overlapping old/new footprint.
-	var arm_cells := {}
-	for offset: Vector2i in hold_offsets_of(m):
-		var old_pos := old_core + offset
-		var cell := get_cell(old_pos)
-		if String(cell.get("kind", "")) == "arm_slot":
-			arm_cells[offset] = cell.duplicate(true)
 	var claimed_offsets: Array = slot_offsets.duplicate()
-	claimed_offsets.append_array(arm_cells.keys())
 	var footprint := _relocate_footprint(new_core, claimed_offsets, body_offsets)
 	# Vacate the old body (core + extras + slots) first so it can overlap the new spot.
 	set_cell(old_core, {})
@@ -635,8 +497,6 @@ func _relocate(mi: int, new_core: Vector2i, slot_offsets: Array) -> void:
 		set_cell(old_core + o, {})
 	for p: Variant in m.get("slots", []):
 		set_cell(Vector2i(p), {})
-	for offset: Vector2i in arm_cells:
-		set_cell(old_core + offset, {})
 	# Shift aside any items the new footprint would cover.
 	for p: Vector2i in footprint:
 		if String(get_cell(p).get("kind", "")) == "resource":
@@ -653,10 +513,6 @@ func _relocate(mi: int, new_core: Vector2i, slot_offsets: Array) -> void:
 		var p := new_core + o
 		set_cell(p, {"kind": "machine_slot", "mi": mi})
 		m.slots.append(p)
-	for offset: Vector2i in arm_cells:
-		set_cell(new_core + offset, arm_cells[offset])
-	for entry: Dictionary in m.get("modules", []):
-		entry["pos"] = Vector2i(entry.get("pos", Vector2i.ZERO)) + delta
 
 
 ## Places a resource in the first free cell not in `avoid` (scanning bottom-right).
@@ -677,77 +533,6 @@ func _add_resource_avoiding(id: String, avoid: Dictionary) -> bool:
 		cells[i] = {"kind": "resource", "id": id, "count": 1}
 		return true
 	return false
-
-
-# -------------------------------------------------------- modules ----
-
-## How many of a module id are currently installed across all machines (so the UI
-## can cap installs at the owned count — installed modules are never consumed, they
-## free up when the factory resets each run).
-func installed_count(module_id: String) -> int:
-	var n := 0
-	for m: Dictionary in machines:
-		for entry: Dictionary in m.get("modules", []):
-			if String(entry.get("id", "")) == module_id:
-				n += 1
-	return n
-
-
-func module_at(pos: Vector2i) -> String:
-	var mi := int(get_cell(pos).get("mi", -1))
-	if get_cell(pos).get("kind", "") != "machine_slot" or mi < 0:
-		return ""
-	for entry: Dictionary in machines[mi].get("modules", []):
-		if Vector2i(entry.get("pos", Vector2i.ZERO)) == pos:
-			return String(entry.get("id", ""))
-	return ""
-
-
-## Installs a module into an empty machine_slot cell. Returns false if the cell is
-## not an empty slot.
-func install_module(pos: Vector2i, module_id: String) -> bool:
-	var cell := get_cell(pos)
-	if cell.get("kind", "") != "machine_slot":
-		return false
-	if not module_at(pos).is_empty():
-		return false
-	var mi := int(cell.mi)
-	machines[mi].modules.append({"pos": pos, "id": module_id})
-	return true
-
-
-## Removes a module from a slot cell. Returns the removed id, or "".
-func remove_module(pos: Vector2i) -> String:
-	var mi := int(get_cell(pos).get("mi", -1))
-	if mi < 0:
-		return ""
-	var mods: Array = machines[mi].get("modules", [])
-	for i in mods.size():
-		if Vector2i(mods[i].get("pos", Vector2i.ZERO)) == pos:
-			var id := String(mods[i].get("id", ""))
-			mods.remove_at(i)
-			return id
-	return ""
-
-
-## Combined speed multiplier from a machine's installed 'speed' modules (stacks).
-func _module_speed_mult(m: Dictionary) -> float:
-	var mult := 1.0
-	for entry: Dictionary in m.get("modules", []):
-		var def: Dictionary = GameData.modules.get(String(entry.get("id", "")), {})
-		if String(def.get("effect", "")) == "speed":
-			mult *= float(def.get("value", 1.0))
-	return mult
-
-
-## Total bonus output items per craft from a machine's 'yield' modules.
-func _module_yield(m: Dictionary) -> int:
-	var bonus := 0
-	for entry: Dictionary in m.get("modules", []):
-		var def: Dictionary = GameData.modules.get(String(entry.get("id", "")), {})
-		if String(def.get("effect", "")) == "yield":
-			bonus += int(def.get("value", 0))
-	return bonus
 
 
 # ------------------------------------------------------------- tick ----
@@ -786,9 +571,8 @@ func tick(delta: float) -> void:
 			m.status_detail = _closest_missing(m, recipes)
 			continue
 
-		# Each permanent upgrade level multiplies craft time down (SPEED_PER_LEVEL); modules
-		# stack on top.
-		var seconds := float(recipe.get("seconds", 3.0)) * pow(SPEED_PER_LEVEL, level - 1) * _module_speed_mult(m)
+		# Each permanent upgrade level multiplies craft time down (SPEED_PER_LEVEL).
+		var seconds := float(recipe.get("seconds", 3.0)) * pow(SPEED_PER_LEVEL, level - 1)
 		m.progress_ratio = clampf(float(m.progress) / maxf(0.01, seconds), 0.0, 1.0)
 
 		# Blocked unless every product can land (an empty output cell, or a same-id output
@@ -806,10 +590,6 @@ func tick(delta: float) -> void:
 		if m.progress >= seconds:
 			_consume_available(m, recipe.get("needs", {}))
 			_place_products(m, recipe.get("produces", {}))
-			# 'yield' modules add a bonus of each product into any free/stackable cells.
-			for _y in _module_yield(m):
-				for id: String in recipe.get("produces", {}):
-					add_resource(id)
 			m.progress = 0.0
 			m.working = false
 
@@ -953,60 +733,54 @@ func status_at(pos: Vector2i) -> String:
 	return ""  # recipe-less machine (e.g. the arm)
 
 
-# ------------------------------------------------------ arm intake ----
+# --------------------------------------------------- scrap inserters ----
 
-## Current Scrapper Arm level (how many scrap tiers are unlocked). Default 1 (steel only).
-func arm_level() -> int:
-	return int(MetaState.machine_level("scrapper_arm"))
-
-
-## A scrap type's tier (1 = steel … 4 = ceramic), or 0 if it isn't one of the four scraps.
-func arm_tier_of(id: String) -> int:
-	return ARM_SLOT_TYPES.find(id) + 1
-
-
-## True if the arm can currently HOLD this scrap type — it's one of the four and its tier is
-## unlocked by the arm's level. Harvesting a locked type is refused (its pile reads as inert).
-func arm_accepts(id: String) -> bool:
-	var tier := arm_tier_of(id)
-	return tier >= 1 and tier <= arm_level()
-
-
-## Stacks one harvested scrap into the Scrapper Arm's matching typed slot. Returns false if the
-## type's tier isn't unlocked yet, there is no arm / no slot for it, or the slot is full.
-func deposit_harvest(id: String) -> bool:
-	if not arm_accepts(id):
+## Places a scrap inserter pinned to `scrap` at `pos` (its own reserved, typed sink). Returns
+## false if the cell can't take transport. An adjacent recycler pulls scrap straight from it.
+func place_inserter(pos: Vector2i, scrap: String) -> bool:
+	if not _clear_for_transport(pos):
 		return false
+	set_cell(pos, {"kind": "inserter", "scrap": scrap, "count": 0})
+	return true
+
+
+## Routes one hauled scrap item home. If an inserter is pinned to this type (with room) it stacks
+## there — the player parks a type exactly where a recycler eats it. Otherwise it feeds the grid
+## from the TOP-LEFT: onto the first matching stack with room, else the first empty cell. There is
+## no tier gate here; the goblin's TOOL already decided it could scrap this. Returns false if full.
+func deposit_scrap(id: String) -> bool:
 	for cell: Dictionary in cells:
-		if String(cell.get("kind", "")) == "arm_slot" and String(cell.get("scrap", "")) == id \
-				and int(cell.get("count", 0)) < ARM_SLOT_MAX:
+		if String(cell.get("kind", "")) == "inserter" and String(cell.get("scrap", "")) == id \
+				and int(cell.get("count", 0)) < INSERTER_MAX:
 			cell["count"] = int(cell.get("count", 0)) + 1
+			return true
+	# Feed in from the top-left (row-major): stack onto a matching resource first, else first gap.
+	var mx := GameData.stack_max(id)
+	if mx > 1:
+		for c: Dictionary in cells:
+			if String(c.get("kind", "")) == "resource" and String(c.get("id", "")) == id and int(c.get("count", 1)) < mx:
+				c["count"] = int(c.get("count", 1)) + 1
+				return true
+	for i in cells.size():
+		if cells[i].is_empty():
+			cells[i] = {"kind": "resource", "id": id, "count": 1}
 			return true
 	return false
 
 
-## Room left in the arm's slot for this scrap type (0 if there is no arm / no slot for it).
-func arm_slot_space(id: String) -> int:
-	var space := 0
-	for cell: Dictionary in cells:
-		if String(cell.get("kind", "")) == "arm_slot" and String(cell.get("scrap", "")) == id:
-			space += ARM_SLOT_MAX - int(cell.get("count", 0))
-	return space
-
-
-## How much of a scrap type the arm is currently holding.
-func arm_slot_count(id: String) -> int:
+## How much of a scrap type its inserter is currently holding (0 if none is pinned to it).
+func inserter_count(id: String) -> int:
 	var n := 0
 	for cell: Dictionary in cells:
-		if String(cell.get("kind", "")) == "arm_slot" and String(cell.get("scrap", "")) == id:
+		if String(cell.get("kind", "")) == "inserter" and String(cell.get("scrap", "")) == id:
 			n += int(cell.get("count", 0))
 	return n
 
 
-# -------------------------------------------- recyclers pull from the arm ----
+# -------------------------------------------- recyclers pull from inserters ----
 
-## Arm slots orthogonally adjacent to a machine's input cells (where it can draw scrap from).
-func _arm_slots_adjacent_to_inputs(m: Dictionary) -> Array:
+## Scrap inserters orthogonally adjacent to a machine's input cells (where it draws scrap from).
+func _inserters_adjacent_to_inputs(m: Dictionary) -> Array:
 	var out: Array = []
 	var seen := {}
 	for ip: Vector2i in input_positions(m):
@@ -1014,16 +788,16 @@ func _arm_slots_adjacent_to_inputs(m: Dictionary) -> Array:
 			var np := ip + d
 			if not in_bounds(np) or seen.has(np):
 				continue
-			if String(get_cell(np).get("kind", "")) == "arm_slot":
+			if String(get_cell(np).get("kind", "")) == "inserter":
 				seen[np] = true
 				out.append(np)
 	return out
 
 
-## Inputs available to a machine: what sits in its input cells PLUS scrap in adjacent arm slots.
+## Inputs available to a machine: what sits in its input cells PLUS scrap in adjacent inserters.
 func _available_inputs(m: Dictionary) -> Dictionary:
 	var ms := _input_multiset(m)
-	for sp: Vector2i in _arm_slots_adjacent_to_inputs(m):
+	for sp: Vector2i in _inserters_adjacent_to_inputs(m):
 		var c := get_cell(sp)
 		var n := int(c.get("count", 0))
 		if n > 0:
@@ -1032,8 +806,8 @@ func _available_inputs(m: Dictionary) -> Dictionary:
 	return ms
 
 
-## Consumes `needs` from a machine's input cells first, then drains any remainder from the arm
-## slots it's adjacent to (the "pull" that feeds recyclers hugging the arm).
+## Consumes `needs` from a machine's input cells first, then drains any remainder from the scrap
+## inserters it's adjacent to (the "pull" that feeds recyclers hugging an inserter).
 func _consume_available(m: Dictionary, needs: Dictionary) -> void:
 	var left := needs.duplicate()
 	# 1) drain the machine's own input cells
@@ -1051,8 +825,8 @@ func _consume_available(m: Dictionary, needs: Dictionary) -> void:
 			else:
 				c["count"] = rem
 			left[id] = owe - take
-	# 2) pull the remainder straight out of adjacent arm slots
-	for sp: Vector2i in _arm_slots_adjacent_to_inputs(m):
+	# 2) pull the remainder straight out of adjacent inserters
+	for sp: Vector2i in _inserters_adjacent_to_inputs(m):
 		var c := get_cell(sp)
 		var id := String(c.get("scrap", ""))
 		var owe := int(left.get(id, 0))
@@ -1117,14 +891,12 @@ func to_data() -> Dictionary:
 	for c: Dictionary in cells:
 		var kind := String(c.get("kind", ""))
 		if kind == "resource":
-			saved_cells.append({})  # loose items don't persist
-		elif kind == "arm_slot":
-			var ac := c.duplicate()
-			ac["count"] = 0  # the arm's slot STRUCTURE persists; its scrap resets each run
-			saved_cells.append(ac)
+			saved_cells.append(c.duplicate(true))  # the base inventory PERSISTS — what you haul home stays
+		elif kind == "inserter":
+			saved_cells.append(c.duplicate(true))  # inserter type pin + its held scrap persist
 		elif _is_transport_kind(kind):
 			var tc := c.duplicate()
-			tc["item"] = ""  # drop any item riding it
+			tc["item"] = ""  # drop any item riding it (in-transit state resets)
 			saved_cells.append(tc)
 		else:
 			saved_cells.append(c.duplicate(true))  # machine / machine_body / machine_slot
@@ -1136,8 +908,7 @@ func to_data() -> Dictionary:
 		mm["working"] = false
 		mm["status"] = ""
 		mm["status_detail"] = ""
-		mm["cached_count"] = 0
-		mm["cached_id"] = ""
+		# cached_count / cached_id persist — a storage cache keeps its contents between runs.
 		saved_machines.append(mm)
 	return {"cols": cols, "rows": rows, "cells": saved_cells, "machines": saved_machines}
 
@@ -1310,48 +1081,50 @@ func take_cache(mi: int) -> int:
 
 # --------------------------------------------------------------- weapons ----
 
-## Combat hook: finds the first placed weapon whose input slot holds its ammo, consumes
-## one unit of it, and returns that weapon's firing stats. Returns {} when no placed weapon
-## is loaded (the player then falls back to Grobit's basic built-in gun).
-func try_fire_weapon() -> Dictionary:
+## Combat hook: the firing stats of the first placed weapon module (its ammo type is drawn from the
+## bot's loaded reserve by PlayerCombat — see RunState.consume_ammo — not from a grid cell, because
+## bay modules are shapes with no ports now). Returns {} when no weapon is equipped.
+func weapon_stats() -> Dictionary:
 	for m: Dictionary in machines:
 		if bool(m.get("removed", false)):
 			continue
 		var def: Dictionary = GameData.machines.get(String(m.def_id), {})
 		if not bool(def.get("weapon", false)):
 			continue
-		var ammo := String(def.get("ammo", ""))
-		for p: Vector2i in input_positions(m):
-			var c := get_cell(p)
-			if String(c.get("kind", "")) == "resource" and String(c.get("id", "")) == ammo:
-				_take_one(p)  # consume one unit of ammo (from the stack)
-				return {
-					"family": String(def.get("family", "")),
-					"name": String(def.get("name", "Weapon")),
-					"damage": float(def.get("damage", 2)),
-					"cooldown": float(def.get("cooldown", 0.4)),
-					"projectile_speed": float(def.get("projectile_speed", 400)),
-					"pellets": int(def.get("pellets", 1)),       # plastic spread
-					"spread_deg": float(def.get("spread_deg", 0.0)),
-					"pierce": int(def.get("pierce", 0)),         # ceramic pierce
-				}
+		return {
+			"family": String(def.get("family", "")),
+			"name": String(def.get("name", "Weapon")),
+			"ammo": String(def.get("ammo", "")),
+			"damage": float(def.get("damage", 2)),
+			"cooldown": float(def.get("cooldown", 0.4)),
+			"projectile_speed": float(def.get("projectile_speed", 400)),
+			"pellets": int(def.get("pellets", 1)),       # plastic spread
+			"spread_deg": float(def.get("spread_deg", 0.0)),
+			"pierce": int(def.get("pierce", 0)),         # ceramic pierce
+		}
 	return {}
 
 
-## True if any placed weapon currently has its ammo loaded (read-only, for HUD/readouts).
-func has_loaded_weapon() -> bool:
+## True if a weapon module is equipped in this grid (read-only; "armed" also needs loaded ammo —
+## see RunState.weapon_armed).
+func has_weapon() -> bool:
 	for m: Dictionary in machines:
 		if bool(m.get("removed", false)):
 			continue
-		var def: Dictionary = GameData.machines.get(String(m.def_id), {})
-		if not bool(def.get("weapon", false)):
-			continue
-		var ammo := String(def.get("ammo", ""))
-		for p: Vector2i in input_positions(m):
-			var c := get_cell(p)
-			if String(c.get("kind", "")) == "resource" and String(c.get("id", "")) == ammo:
-				return true
+		if bool(GameData.machines.get(String(m.def_id), {}).get("weapon", false)):
+			return true
 	return false
+
+
+## The fire-rate multiplier from installed Ammo Loader modules: 1.0 + the sum of each module's
+## `fire_rate`. PlayerCombat divides the weapon's cooldown by this (more loaders = faster shooting).
+func fire_rate_multiplier() -> float:
+	var mult := 1.0
+	for m: Dictionary in machines:
+		if bool(m.get("removed", false)):
+			continue
+		mult += float(GameData.machines.get(String(m.def_id), {}).get("fire_rate", 0.0))
+	return mult
 
 
 ## moves at most once per step (movers are snapshotted up front).

@@ -1,7 +1,8 @@
 extends Node
-## Repairable weapons: a placed weapon machine fires with its own stats, eating one unit of
-## its family's ammo from its input slot. Wrong ammo is ignored; no ammo → the basic gun
-## (try_fire_weapon returns {}).
+## Weapons are BAY MODULES now — shapes with NO ammo input slot. A placed weapon exposes its firing
+## stats via weapon_stats() (no consuming), the bot draws ammo from RunState's loaded reserve (ammo
+## is MADE in the workshop and loaded at launch), and Ammo Loader modules speed up the fire rate.
+## Spread/pierce behaviour fields still flow through weapon_stats.
 
 var fail := 0
 
@@ -14,40 +15,57 @@ class FakeEnemy extends Node:
 
 func _ready() -> void:
 	var g := FactoryGrid.new(6, 6)
+	_ck(not g.has_weapon(), "no weapon → has_weapon is false")
+	_ck(g.weapon_stats().is_empty(), "no weapon → no stats")
 	var mi := g.place_machine("steel_weapon", Vector2i(3, 3))
-	_ck(mi >= 0, "weapon placed in the grid")
-	var inp: Vector2i = g.input_positions(g.machines[mi])[0]
+	_ck(mi >= 0, "a weapon places as a bay module")
+	_ck(g.input_positions(g.machines[mi]).is_empty(), "a weapon module has no input ports (it's just a shape)")
+	_ck(g.has_weapon(), "has_weapon is true once placed")
+	var shot := g.weapon_stats()
+	_ck(String(shot.get("family", "")) == "steel" and int(shot.get("damage", 0)) == 6, "weapon_stats returns its family + damage")
+	_ck(String(shot.get("ammo", "")) == "steel_slugs", "weapon_stats names its ammo type")
 
-	# No ammo loaded → no weapon shot (player falls back to the basic gun).
-	_ck(g.try_fire_weapon().is_empty(), "unloaded weapon doesn't fire (basic gun fallback)")
-	_ck(not g.has_loaded_weapon(), "has_loaded_weapon is false when empty")
+	# Fire rate: Ammo Loaders multiply it.
+	_ck(absf(g.fire_rate_multiplier() - 1.0) < 0.001, "no loaders → 1.0× fire rate")
+	g.place_machine("ammo_loader", Vector2i(0, 0))
+	_ck(g.fire_rate_multiplier() > 1.3, "an Ammo Loader speeds up the fire rate (+35%)")
 
-	# Feed the matching ammo → it's loaded and fires with its stats.
-	g.set_cell(inp, {"kind": "resource", "id": "steel_slugs"})
-	_ck(g.has_loaded_weapon(), "loaded once its ammo is in the input slot")
-	var shot := g.try_fire_weapon()
-	_ck(not shot.is_empty() and String(shot.get("family", "")) == "steel", "loaded weapon fires with its family stats")
-	_ck(int(shot.get("damage", 0)) == 6, "steel weapon uses its damage (6)")
-	_ck(g.get_cell(inp).is_empty(), "firing consumed one ammo from the slot")
-	_ck(g.try_fire_weapon().is_empty(), "no ammo left → no further weapon shot")
+	# The ammo reserve lives on the BOT (RunState), loaded from the workshop — not in a grid cell.
+	RunState.begin_run(GameData.first_area_id(), 1)
+	RunState.bay = FactoryGrid.new(RunState.BAY_COLS, RunState.BAY_ROWS)
+	RunState.bay.place_machine("steel_weapon", Vector2i(2, 2))
+	RunState.add("steel_slugs", 2)  # produced in the workshop
+	_ck(not RunState.weapon_armed(), "a weapon with no loaded ammo is NOT armed")
+	RunState.load_ammo()
+	_ck(RunState.ammo_count("steel_slugs") == 2 and RunState.get_quantity("steel_slugs") == 0, "launch loads the workshop ammo onto the bot")
+	_ck(RunState.weapon_armed(), "a weapon + loaded ammo is armed")
+	_ck(RunState.consume_ammo("steel_slugs"), "firing spends one ammo from the reserve")
+	_ck(RunState.ammo_count("steel_slugs") == 1, "the reserve drops by one")
+	RunState.consume_ammo("steel_slugs")
+	_ck(not RunState.consume_ammo("steel_slugs"), "no shot once the reserve is empty")
+	_ck(not RunState.weapon_armed(), "out of ammo → not armed")
 
-	# Wrong ammo type is ignored (and left in the slot).
-	g.set_cell(inp, {"kind": "resource", "id": "charge_cells"})  # copper ammo in a steel weapon
-	_ck(g.try_fire_weapon().is_empty(), "weapon ignores the wrong ammo type")
-	_ck(String(g.get_cell(inp).get("id", "")) == "charge_cells", "the wrong ammo stays in the slot")
+	# Unspent ammo returns to the workshop on a clean extract.
+	RunState.ammo = {"steel_slugs": 3}
+	RunState.return_ammo()
+	_ck(RunState.get_quantity("steel_slugs") == 3 and RunState.ammo.is_empty(), "unspent ammo comes home on extract")
 
-	# Plastic = spread, ceramic = pierce (behavior fields flow through try_fire_weapon).
+	# The carry is CAPPED by hold size — extra ammo stays in the workshop (workshop now holds 3).
+	var cap := RunState.ammo_capacity()
+	_ck(cap > 0, "ammo capacity is derived from the hold (%d)" % cap)
+	RunState.add("steel_slugs", cap + 50)  # workshop now holds 3 + cap + 50 — far over the cap
+	RunState.load_ammo()
+	_ck(RunState.ammo_count("steel_slugs") == cap, "the bot loads only up to the hold cap")
+	_ck(RunState.get_quantity("steel_slugs") == 53, "ammo beyond the cap stays in the workshop (3 + 50)")
+
+	# Spread / pierce behaviour fields flow through weapon_stats.
 	var gp := FactoryGrid.new(6, 6)
-	var pm := gp.place_machine("plastic_weapon", Vector2i(3, 3))
-	gp.set_cell(gp.input_positions(gp.machines[pm])[0], {"kind": "resource", "id": "resin_capsules"})
-	var ps := gp.try_fire_weapon()
-	_ck(int(ps.get("pellets", 1)) == 3 and float(ps.get("spread_deg", 0)) > 0.0, "plastic weapon fires a 3-pellet spread")
-
+	gp.place_machine("plastic_weapon", Vector2i(3, 3))
+	var ps := gp.weapon_stats()
+	_ck(int(ps.get("pellets", 1)) == 3 and float(ps.get("spread_deg", 0)) > 0.0, "plastic weapon = 3-pellet spread")
 	var gc := FactoryGrid.new(6, 6)
-	var cm := gc.place_machine("ceramic_weapon", Vector2i(3, 3))
-	gc.set_cell(gc.input_positions(gc.machines[cm])[0], {"kind": "resource", "id": "ceramic_charges"})
-	var cs := gc.try_fire_weapon()
-	_ck(int(cs.get("pierce", 0)) == 2, "ceramic weapon shot pierces 2")
+	gc.place_machine("ceramic_weapon", Vector2i(3, 3))
+	_ck(int(gc.weapon_stats().get("pierce", 0)) == 2, "ceramic weapon pierces 2")
 
 	# A piercing projectile passes through its allowance of enemies, once each.
 	var proj := BasicProjectile.new()

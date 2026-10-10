@@ -72,7 +72,6 @@ class ProjectStructureTests(unittest.TestCase):
             "enemies.json",
             "abilities.json",
             "machines.json",
-            "modules.json",
             "generation.json",
             "area.json",
         ):
@@ -100,22 +99,16 @@ class ProjectStructureTests(unittest.TestCase):
             "scripts/world/interactable_object.gd",
             "scripts/world/scrap_node.gd",
             "scripts/world/repair_station.gd",
-            "scripts/world/objective_terminal.gd",
-            "scripts/world/retrieval_pad.gd",
-            "scripts/world/decode_station.gd",
+            "scripts/world/tool_pickup.gd",
             "scripts/build/build_manager.gd",
             "scripts/build/respawn_beacon.gd",
-            "scripts/build/extraction_beacon.gd",
             "scripts/machines/factory_processor.gd",
-            "scripts/machines/power_generator.gd",
             "scripts/ui/hud.gd",
             "scripts/ui/selector.gd",
             "scripts/ui/selection_manager.gd",
             "scripts/ui/minimap.gd",
             "scripts/ui/build_palette.gd",
             "scripts/ui/factory_panel.gd",
-            "scripts/ui/cartridge_panel.gd",
-            "scripts/ui/decode_panel.gd",
             "scripts/ui/ability_choice_panel.gd",
         )
         for relative_path in expected:
@@ -133,7 +126,6 @@ class ProjectStructureTests(unittest.TestCase):
             "toggle_manufacture",
             "interact",
             "hotbar_1",
-            "level_up",
             "reshuffle",
         ):
             with self.subTest(action=action):

@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://h1l4kjyrjgrw"]
-
-[ext_resource type="Script" path="res://scripts/world/module_library_test.gd" id="1"]
-
-[node name="ModuleLibraryTest" type="Node"]
-script = ExtResource("1")

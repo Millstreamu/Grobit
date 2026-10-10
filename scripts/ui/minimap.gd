@@ -75,7 +75,7 @@ func _room_color(room: Room) -> Color:
 		Room.RoomType.START:
 			return Color(0.40, 0.60, 1.00)
 		Room.RoomType.OBJECTIVE:
-			return Color(0.45, 0.85, 0.5) if _objective_repaired() else Color(0.95, 0.80, 0.30)
+			return Color(0.95, 0.80, 0.30)
 		Room.RoomType.SALVAGE:
 			return Color(0.30, 0.80, 0.80)
 		Room.RoomType.HAZARD:
@@ -88,8 +88,3 @@ func _room_color(room: Room) -> Color:
 			return Color(0.45, 0.80, 0.45) if room.is_cleared else Color(0.55, 0.55, 0.60)
 
 
-func _objective_repaired() -> bool:
-	for node: Node in get_tree().get_nodes_in_group("interactables"):
-		if node is PowerGenerator:
-			return (node as PowerGenerator).is_repaired
-	return false

@@ -23,7 +23,7 @@ func can_interact() -> bool:
 func interaction_prompt() -> String:
 	if RunState.driving:
 		return "[F] Climb out & head home (extract)"
-	return "[F] Set up your loadout & launch"
+	return "[F] Board the scrapbot — loadout, squad & launch"
 
 
 func interact() -> void:

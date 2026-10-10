@@ -64,6 +64,7 @@
       "salvage_loot": [
         { "resource": "bent_panel", "min": 2, "max": 4, "chance": 1.0 },
         { "resource": "cable_bundle", "min": 1, "max": 2, "chance": 0.7 },
+        { "resource": "food", "min": 1, "max": 3, "chance": 0.8 },
         { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.3 }
       ],
       "hazard": { "damage": 1, "interval": 0.6, "radius": 40 },
@@ -71,10 +72,12 @@
       "resource_drops": {
         "basic_enemy": [
           { "resource": "electronic_scrap", "min": 1, "max": 1, "chance": 0.45 },
+          { "resource": "food", "min": 1, "max": 1, "chance": 0.3 },
           { "resource": "tech_data", "min": 1, "max": 1, "chance": 0.15 }
         ],
         "swarmer": [
-          { "resource": "mechanical_parts", "min": 1, "max": 1, "chance": 0.5 }
+          { "resource": "mechanical_parts", "min": 1, "max": 1, "chance": 0.5 },
+          { "resource": "food", "min": 1, "max": 2, "chance": 0.4 }
         ],
         "brute": [
           { "resource": "mechanical_parts", "min": 2, "max": 3, "chance": 1.0 },

@@ -9,25 +9,63 @@ const SAVE_PATH := "user://grobit_save.json"
 
 signal changed()
 
-var tech_data := 0
 var unlocked: Array[String] = []
 ## Resources delivered home over all runs (id -> total count). This is the
 ## permanent progress the whole loop feeds — re-commissioning the Mars facility.
 var mars_delivered: Dictionary = {}
-## Modules the player owns, drafted at decode stations. Persists across runs (the
-## factory resets each run, but your module arsenal does not).
-var modules_owned: Dictionary = {}
 ## Machine ids unlocked by delivering resources home (locked machines become
 ## buildable once their unlock_requires is met). Persists across runs.
 var machines_unlocked: Array[String] = []
-## Locked module ids added to the decode pool by deliveries (the module library
-## grows as you play). Base (unlocked) modules are always in the pool. Persists.
-var module_library: Array[String] = []
 
 ## The player's PERSISTENT factory layout, carried between runs — `var_to_str` of
 ## FactoryGrid.to_data(). Empty means "no factory yet" (first run starts bare). Stored as a
 ## string because the layout contains Vector2i, which JSON can't represent.
 var factory_blob := ""
+
+## The scrapbot's MODULE BAY loadout (weapons/support), carried between runs — same var_to_str
+## blob format as factory_blob. Empty means an empty bay.
+var bay_blob := ""
+
+## Persistent CARGO HOLD expansion — extra rows bought at the terminal (Dredge "bigger hold").
+var cargo_rows_bonus := 0
+const CARGO_BONUS_MAX := 4
+
+
+func can_expand_cargo() -> bool:
+	return cargo_rows_bonus < CARGO_BONUS_MAX
+
+
+## Refined materials to add another row of cargo hold (climbs each time). Paid in steel + copper.
+func expand_cargo_cost() -> Dictionary:
+	var n := cargo_rows_bonus + 1
+	return {"steel": 5 * n, "copper": 3 * n}
+
+
+## Spends refined materials to enlarge the cargo hold one row. Returns success.
+func expand_cargo() -> bool:
+	if not can_expand_cargo():
+		return false
+	var cost := expand_cargo_cost()
+	if not RunState.can_afford(cost) or not RunState.spend(cost):
+		return false
+	cargo_rows_bonus += 1
+	save_game()
+	changed.emit()
+	return true
+
+
+## Spends `cost` Tech Data from the inventory grid (it's a grid item now). Returns false — paying
+## nothing — if there isn't enough. All base-side purchases route through here.
+func _spend_tech(cost: int) -> bool:
+	if RunState.get_quantity("tech_data") < cost:
+		return false
+	RunState.add("tech_data", -cost)
+	return true
+
+
+## How much Tech Data is on hand to spend (in the inventory grid).
+func tech_data_on_hand() -> int:
+	return RunState.get_quantity("tech_data")
 
 ## Permanent machine upgrades bought with banked tech_data (def_id -> level, default 1).
 ## Every placed machine of that type benefits (faster processing + higher recipe gate), and
@@ -61,6 +99,278 @@ const NEED_COMPONENT := {
 }
 var lair_needs: Dictionary = {}
 var beacon_sent := false            # the distress beacon has been sent — you're rescued (win)
+
+## The colony: the NAMED goblins you can deploy from the bot. Permadeath — a goblin lost in the
+## field is moved to `fallen` for good (it never comes back). The colony regrows by RECRUITING
+## at the System Terminal (spends banked Tech Data), capped at COLONY_MAX. `colony` is kept only
+## as the legacy count for save migration + the first-run seed; `roster` is the source of truth.
+const COLONY_MAX := 6
+const GOBLIN_NAMES := [
+	"Gruzzle", "Snik", "Borg", "Mo", "Krunk", "Zizz", "Grub", "Nix",
+	"Wort", "Durp", "Skab", "Fizz", "Brak", "Hodd", "Lurk", "Pib",
+]
+var roster: Array = []   # living goblins: [{name:String, hauled:int, tool:String}]
+var fallen: Array = []   # the memorial — goblins lost in the field: [{name:String, hauled:int}]
+var colony := 3          # legacy / migration seed only (see roster)
+
+## SCRAP TOOLS — what a goblin can scrap is gated by the tier of its equipped tool (not the
+## factory). Tools are distinct items you SWAP between goblins, and better ones are FOUND in runs
+## (added to `tools_found`, then equipped back home). Every goblin starts with the tier-1 tool so
+## the game is playable from the first run. Tiers match FactoryGrid.SCRAP_ORDER (1 steel … 4 ceramic).
+const TOOLS := {
+	"scrap_claw": {"name": "Scrap Claw", "tier": 1},
+	"copper_cutter": {"name": "Copper Cutter", "tier": 2},
+	"poly_ripper": {"name": "Poly Ripper", "tier": 3},
+	"ceramic_saw": {"name": "Ceramic Saw", "tier": 4},
+}
+const STARTER_TOOL := "scrap_claw"
+## Refined material per tier (recycler output). UPGRADING a tool to the next tier costs the tool's
+## CURRENT-tier material — a self-gating ladder fed by what the colony brings home + refines.
+const TIER_MATERIAL := ["steel", "copper", "plastic", "ceramic"]
+const UPGRADE_TOOL_AMOUNT := 3
+var tools_found: Array = []   # tool ids found but not yet equipped to a goblin (the swap pool)
+
+## Colony quests (see data/game/quests.json): progress is computed live from this state; a finished
+## quest is CLAIMED once for its reward. `quests_claimed` holds the ids already claimed (persisted).
+var quests_claimed: Array = []
+
+
+## Live progress toward a quest's goal (compared against goal.target). Pure read of current state.
+func quest_current(goal: Dictionary) -> int:
+	match String(goal.get("type", "")):
+		"colony":
+			return colony_size()
+		"tool_tier":
+			return best_tool_tier()
+		"need":
+			return need_amount(String(goal.get("key", "")))
+		"need_total":
+			var total := 0
+			for need: String in LAIR_NEEDS:
+				total += need_amount(need)
+			return total
+		"machine_level":
+			return machine_level(String(goal.get("key", "")))
+		"tech":
+			return 1 if has_tech(String(goal.get("key", ""))) else 0
+	return 0
+
+
+func quest_target(goal: Dictionary) -> int:
+	return maxi(int(goal.get("target", 1)), 1)
+
+
+func quest_done(q: Dictionary) -> bool:
+	return quest_current(q.get("goal", {})) >= quest_target(q.get("goal", {}))
+
+
+func quest_claimed(id: String) -> bool:
+	return quests_claimed.has(id)
+
+
+## Claims a finished, unclaimed quest: grants its reward (Tech Data into the run inventory) and
+## records it so it can't be claimed twice. Returns true on a successful claim.
+func claim_quest(q: Dictionary) -> bool:
+	var id := String(q.get("id", ""))
+	if id == "" or quest_claimed(id) or not quest_done(q):
+		return false
+	quests_claimed.append(id)
+	var reward: Dictionary = q.get("reward", {})
+	var td := int(reward.get("tech_data", 0))
+	if td > 0:
+		RunState.add("tech_data", td)
+	save_game()
+	changed.emit()
+	return true
+
+
+## A tool's tier (0 if it isn't a known tool / bare hands).
+func tool_tier(tool_id: String) -> int:
+	return int(TOOLS.get(tool_id, {}).get("tier", 0))
+
+
+## The tool id at a given tier (1 steel … 4 ceramic), or "" if none.
+func tool_id_for_tier(tier: int) -> String:
+	for id: String in TOOLS:
+		if int(TOOLS[id].get("tier", 0)) == tier:
+			return id
+	return ""
+
+
+## The material + amount it costs to upgrade a goblin's tool one tier, or {} if it's maxed (tier 4)
+## OR the next tier isn't unlocked yet (a Tech Data toolsmithing gate — see can_use_tool_tier).
+func upgrade_tool_cost(gob_name: String) -> Dictionary:
+	var t := goblin_tool_tier(gob_name)
+	if t < 1 or t >= 4 or not can_use_tool_tier(t + 1):
+		return {}
+	return {TIER_MATERIAL[t - 1]: UPGRADE_TOOL_AMOUNT}
+
+
+## Sets a living goblin's equipped tool outright (used by the terminal's upgrade). Saves.
+func set_goblin_tool(gob_name: String, tool_id: String) -> bool:
+	for g: Dictionary in roster:
+		if String(g.get("name", "")) == gob_name:
+			g["tool"] = tool_id
+			save_game()
+			changed.emit()
+			return true
+	return false
+
+
+func tool_name(tool_id: String) -> String:
+	return String(TOOLS.get(tool_id, {}).get("name", tool_id))
+
+
+## The scrap tier a given goblin can reach, from its equipped tool (0 if the name is unknown).
+func goblin_tool_tier(gob_name: String) -> int:
+	for g: Dictionary in roster:
+		if String(g.get("name", "")) == gob_name:
+			return tool_tier(String(g.get("tool", "")))
+	return 0
+
+
+## The best tool tier anywhere in the colony — the progression frontier the field generator weights
+## scrap/machine spawns around. At least 1 so a starter colony still finds steel.
+func best_tool_tier() -> int:
+	var best := 1
+	for g: Dictionary in roster:
+		best = maxi(best, tool_tier(String(g.get("tool", ""))))
+	return best
+
+
+## Banks a tool found in the field into the swap pool (equipped to a goblin back home).
+func found_tool(tool_id: String) -> void:
+	if not TOOLS.has(tool_id):
+		return
+	tools_found.append(tool_id)
+	save_game()
+	changed.emit()
+
+
+## The highest-tier tool in the found pool that the colony is allowed to use (capped by the unlocked
+## tool tier — a higher-tier tool sits in the pool until its toolsmithing is unlocked). "" if none.
+func best_available_tool() -> String:
+	var best := ""
+	var best_tier := 0
+	var cap := max_tool_tier()
+	for id: String in tools_found:
+		var t := tool_tier(id)
+		if t > best_tier and t <= cap:
+			best_tier = t
+			best = id
+	return best
+
+
+## Equips `tool_id` (from the pool) onto a goblin, returning its previous tool to the pool. Returns
+## true on success. A no-op if the goblin or tool isn't available.
+func equip_tool(gob_name: String, tool_id: String) -> bool:
+	if not tools_found.has(tool_id):
+		return false
+	for g: Dictionary in roster:
+		if String(g.get("name", "")) == gob_name:
+			tools_found.erase(tool_id)
+			var old := String(g.get("tool", ""))
+			if TOOLS.has(old) and old != STARTER_TOOL:
+				tools_found.append(old)  # the swapped-out tool goes back to the pool
+			g["tool"] = tool_id
+			save_game()
+			changed.emit()
+			return true
+	return false
+
+
+## How many goblins you can deploy right now.
+func colony_size() -> int:
+	return roster.size()
+
+
+## The living goblins' names, in roster order — one per goblin a deploy spawns.
+func colony_names() -> Array:
+	var names: Array = []
+	for g: Dictionary in roster:
+		names.append(String(g.get("name", "Goblin")))
+	return names
+
+
+## Ensures the roster exists: on a fresh save (or one from before named goblins) it seeds the
+## roster from the legacy `colony` count. Safe to call repeatedly — a no-op once populated.
+func ensure_roster() -> void:
+	if roster.is_empty() and colony > 0:
+		for _i in colony:
+			_add_goblin()
+
+
+## Rebuilds the roster to exactly `n` fresh goblins and clears the memorial (tests / debug).
+func seed_colony(n: int) -> void:
+	roster.clear()
+	fallen.clear()
+	colony = n
+	for _i in n:
+		_add_goblin()
+
+
+func _add_goblin() -> void:
+	roster.append({"name": _fresh_name(), "hauled": 0, "tool": STARTER_TOOL})
+
+
+## A goblin name not already in use (living or fallen), falling back to a numbered one.
+func _fresh_name() -> String:
+	var used := {}
+	for g: Dictionary in roster:
+		used[String(g.get("name", ""))] = true
+	for g: Dictionary in fallen:
+		used[String(g.get("name", ""))] = true
+	for n: String in GOBLIN_NAMES:
+		if not used.has(n):
+			return n
+	return "Goblin-%d" % (roster.size() + fallen.size() + 1)
+
+
+## Credits a living goblin with scrap it hauled home (flavour + a meaningful memorial).
+func record_haul(gob_name: String, amount: int) -> void:
+	for g: Dictionary in roster:
+		if String(g.get("name", "")) == gob_name:
+			g["hauled"] = int(g.get("hauled", 0)) + amount
+			return
+
+
+## A deployed goblin fell — move it from the roster to the memorial (permanent). Returns its
+## record, or {} if the name wasn't on the roster.
+func lose_goblin(gob_name: String) -> Dictionary:
+	for i in roster.size():
+		if String(roster[i].get("name", "")) == gob_name:
+			var rec: Dictionary = roster[i]
+			fallen.append(rec)
+			roster.remove_at(i)
+			colony = roster.size()
+			save_game()
+			changed.emit()
+			return rec
+	return {}
+
+
+func can_recruit() -> bool:
+	return colony_size() < COLONY_MAX
+
+
+## FOOD to recruit the next goblin — you feed the colony to grow it. Climbs with every goblin
+## already in the colony. (Recruiting no longer costs Tech Data — that's for progression unlocks.)
+func recruit_cost() -> Dictionary:
+	return {"food": 3 * maxi(1, colony_size())}  # size 2→6, 3→9, 4→12, 5→15 …
+
+
+## Spends Food (from the run inventory) to add a fresh goblin to the colony. Returns the new
+## goblin's record, or {} if at capacity or short on Food.
+func recruit() -> Dictionary:
+	if not can_recruit():
+		return {}
+	if not RunState.can_afford(recruit_cost()) or not RunState.spend(recruit_cost()):
+		return {}
+	_add_goblin()
+	colony = roster.size()
+	save_game()
+	changed.emit()
+	return roster.back()
 
 
 func need_amount(need: String) -> int:
@@ -134,23 +444,85 @@ func can_upgrade_machine(def_id: String) -> bool:
 	return machine_level(def_id) < MAX_MACHINE_LEVEL
 
 
-## Tech Data to take a machine type from its current level to the next.
-func machine_upgrade_cost(def_id: String) -> int:
-	return 3 * machine_level(def_id)  # 1→2: 3, 2→3: 6, 3→4: 9, 4→5: 12
+## REFINED MATERIALS to take a machine type from its current level to the next — paid in the
+## machine's own family material (steel/copper/plastic/ceramic), or steel for family-less machines.
+## (Machine upgrades no longer cost Tech Data — that's for progression unlocks.)
+func machine_upgrade_cost(def_id: String) -> Dictionary:
+	return {_upgrade_material(def_id): 2 * machine_level(def_id)}  # 1→2:2, 2→3:4, 3→4:6, 4→5:8
 
 
-## Spends banked tech_data to raise a machine type's permanent level. Returns success.
+## The refined material a machine is associated with: its family material if it has one, else the
+## material named in its id prefix (copper_recycler → copper), else "" (family-less, e.g. frame_maker).
+func _machine_material(def_id: String) -> String:
+	var fam := String(GameData.machines.get(def_id, {}).get("family", ""))
+	if fam in ["steel", "copper", "plastic", "ceramic"]:
+		return fam
+	for mat: String in ["steel", "copper", "plastic", "ceramic"]:
+		if def_id.begins_with(mat + "_"):
+			return mat
+	return ""
+
+
+## The refined material a machine's upgrades are paid in (its material, or steel if family-less).
+func _upgrade_material(def_id: String) -> String:
+	var mat := _machine_material(def_id)
+	return mat if mat != "" else "steel"
+
+
+## Spends refined materials (from the run inventory) to raise a machine type's permanent level.
 func upgrade_machine(def_id: String) -> bool:
 	if not can_upgrade_machine(def_id):
 		return false
 	var cost := machine_upgrade_cost(def_id)
-	if tech_data < cost:
+	if not RunState.can_afford(cost) or not RunState.spend(cost):
 		return false
-	tech_data -= cost
 	machine_levels[def_id] = machine_level(def_id) + 1
 	save_game()
 	changed.emit()
 	return true
+
+
+# ------------------------------------------------- progression (Tech Data) ----
+
+## Material-tier order for machines + tools (steel 1 → copper 2 → plastic 3 → ceramic 4).
+const FAMILY_TIER := {"steel": 1, "copper": 2, "plastic": 3, "ceramic": 4}
+
+
+## A machine's material tier (for the repair gate): from its material (family or id prefix), or 1
+## (always repairable) for family-less machines like component makers and the smelter.
+func machine_tier(def_id: String) -> int:
+	return int(FAMILY_TIER.get(_machine_material(def_id), 1))
+
+
+## The highest machine tier goblins may repair — tier 1 by default, raised by Tech Data unlocks
+## (repair_t2/t3/t4). This is the "repair tier-two machines" progression gate.
+func max_repair_tier() -> int:
+	var best := 1
+	for tid: String in unlocked:
+		var def: Dictionary = GameData.tech.get(tid, {})
+		if String(def.get("effect", "")) == "repair_tier":
+			best = maxi(best, int(def.get("value", 1)))
+	return best
+
+
+## True if the colony has unlocked repairing this machine's tier.
+func can_repair(def_id: String) -> bool:
+	return machine_tier(def_id) <= max_repair_tier()
+
+
+## The highest tool tier the colony may equip/upgrade to — tier 1 by default, raised by Tech Data
+## unlocks (tools_t2/t3/t4). This is the "use higher-tier tools" progression gate.
+func max_tool_tier() -> int:
+	var best := 1
+	for tid: String in unlocked:
+		var def: Dictionary = GameData.tech.get(tid, {})
+		if String(def.get("effect", "")) == "tool_tier":
+			best = maxi(best, int(def.get("value", 1)))
+	return best
+
+
+func can_use_tool_tier(tier: int) -> bool:
+	return tier <= max_tool_tier()
 
 
 func has_factory() -> bool:
@@ -171,6 +543,20 @@ func load_factory() -> FactoryGrid:
 	return FactoryGrid.from_data(data) if data is Dictionary else null
 
 
+## Persists the scrapbot's module-bay loadout (called when a run ends).
+func save_bay(grid: FactoryGrid) -> void:
+	bay_blob = var_to_str(grid.to_data()) if grid != null else ""
+	save_game()
+
+
+## Rebuilds the persisted module bay, or null if there isn't one.
+func load_bay() -> FactoryGrid:
+	if bay_blob == "":
+		return null
+	var data: Variant = str_to_var(bay_blob)
+	return FactoryGrid.from_data(data) if data is Dictionary else null
+
+
 ## Persists the machine/transport storage (call after repairs or placements change it).
 func save_storage() -> void:
 	save_game()
@@ -184,6 +570,7 @@ func clear_factory() -> void:
 
 func _ready() -> void:
 	load_game()
+	ensure_roster()  # a brand-new game (no save file) still starts with a named colony
 
 
 func has_tech(tech_id: String) -> bool:
@@ -198,19 +585,12 @@ func unlock_tech(tech_id: String) -> bool:
 	if def.is_empty():
 		return false
 	var cost := int(def.get("cost", 0))
-	if tech_data < cost:
+	if not _spend_tech(cost):
 		return false
-	tech_data -= cost
 	unlocked.append(tech_id)
 	save_game()
 	changed.emit()
 	return true
-
-
-func add_tech_data(amount: int) -> void:
-	tech_data += amount
-	save_game()
-	changed.emit()
 
 
 ## Banks a shipped delivery (id -> count) toward Mars re-commissioning. Permanent.
@@ -224,18 +604,13 @@ func bank_delivery(items: Dictionary) -> Array:
 	return newly
 
 
-## The nearest not-yet-earned unlock (machine or module) as a short hint like
+## The nearest not-yet-earned machine unlock as a short hint like
 ## "ship 2 Circuit Board → Constructor", or "" if everything is unlocked.
 func next_unlock_hint() -> String:
 	var best_total := 1 << 30
 	var best := ""
 	for id: String in GameData.machines:
 		var s := _unlock_remaining(GameData.machines[id], id, machines_unlocked)
-		if s.total > 0 and s.total < best_total:
-			best_total = s.total
-			best = s.text
-	for id: String in GameData.modules:
-		var s := _unlock_remaining(GameData.modules[id], id, module_library)
 		if s.total > 0 and s.total < best_total:
 			best_total = s.total
 			best = s.text
@@ -281,19 +656,6 @@ func _check_unlocks() -> Array:
 		if met:
 			machines_unlocked.append(machine_id)
 			newly.append(String(def.get("name", machine_id)))
-	# Modules join the decode library the same way.
-	for module_id: String in GameData.modules:
-		var mdef: Dictionary = GameData.modules[module_id]
-		if not bool(mdef.get("locked", false)) or module_library.has(module_id):
-			continue
-		var mmet := true
-		for res: String in mdef.get("unlock_requires", {}):
-			if int(mars_delivered.get(res, 0)) < int(mdef.unlock_requires[res]):
-				mmet = false
-				break
-		if mmet:
-			module_library.append(module_id)
-			newly.append(String(mdef.get("name", module_id)))
 	return newly
 
 
@@ -303,51 +665,6 @@ func mars_total() -> int:
 	for id: String in mars_delivered:
 		total += int(mars_delivered[id])
 	return total
-
-
-# ---------------------------------------------------------- modules ----
-
-func module_count(module_id: String) -> int:
-	return int(modules_owned.get(module_id, 0))
-
-
-## A module type is draftable if it isn't locked, or its library unlock is earned.
-func is_module_unlocked(module_id: String) -> bool:
-	var def: Dictionary = GameData.modules.get(module_id, {})
-	if not bool(def.get("locked", false)):
-		return true
-	return module_library.has(module_id)
-
-
-## Rolls up to `count` distinct module ids to offer at a decode station, drawn from
-## the currently-unlocked library (which grows via deliveries).
-func decode_options(count: int, rng: RandomNumberGenerator) -> Array:
-	var pool: Array = []
-	for id: String in GameData.modules:
-		if is_module_unlocked(id):
-			pool.append(id)
-	if rng != null:
-		pool = _seeded_shuffle(pool, rng)
-	else:
-		pool.shuffle()
-	return pool.slice(0, mini(count, pool.size()))
-
-
-func _seeded_shuffle(arr: Array, rng: RandomNumberGenerator) -> Array:
-	var a := arr.duplicate()
-	for i in range(a.size() - 1, 0, -1):
-		var j := rng.randi() % (i + 1)
-		var tmp: Variant = a[i]
-		a[i] = a[j]
-		a[j] = tmp
-	return a
-
-
-## Adds a decoded module to the permanent collection.
-func grant_module(module_id: String) -> void:
-	modules_owned[module_id] = int(modules_owned.get(module_id, 0)) + 1
-	save_game()
-	changed.emit()
 
 
 ## Sums the 'value' of every unlocked tech whose effect matches. Numeric effects.
@@ -375,13 +692,12 @@ func save_game() -> void:
 		push_error("MetaState could not write save file.")
 		return
 	file.store_string(JSON.stringify({
-		"tech_data": tech_data,
 		"unlocked": unlocked,
 		"mars_delivered": mars_delivered,
-		"modules_owned": modules_owned,
 		"machines_unlocked": machines_unlocked,
-		"module_library": module_library,
 		"factory": factory_blob,
+		"bay": bay_blob,
+		"cargo_rows_bonus": cargo_rows_bonus,
 		"machine_levels": machine_levels,
 		"lair_cells": lair_cells,
 		"lair_grid": lair_grid,
@@ -389,6 +705,11 @@ func save_game() -> void:
 		"machine_instances": var_to_str(machine_instances),
 		"lair_needs": lair_needs,
 		"beacon_sent": beacon_sent,
+		"colony": colony_size(),   # legacy count (kept in sync with the roster)
+		"roster": roster,
+		"fallen": fallen,
+		"tools_found": tools_found,
+		"quests_claimed": quests_claimed,
 	}, "  "))
 
 
@@ -403,7 +724,6 @@ func load_game() -> void:
 		push_warning("MetaState save file was unreadable; ignoring.")
 		return
 	var data: Dictionary = json.data
-	tech_data = int(data.get("tech_data", 0))
 	unlocked.clear()
 	for id: Variant in data.get("unlocked", []):
 		unlocked.append(String(id))
@@ -411,17 +731,12 @@ func load_game() -> void:
 	var saved: Dictionary = data.get("mars_delivered", {})
 	for id: Variant in saved:
 		mars_delivered[String(id)] = int(saved[id])
-	modules_owned.clear()
-	var saved_mods: Dictionary = data.get("modules_owned", {})
-	for id: Variant in saved_mods:
-		modules_owned[String(id)] = int(saved_mods[id])
 	machines_unlocked.clear()
 	for id: Variant in data.get("machines_unlocked", []):
 		machines_unlocked.append(String(id))
-	module_library.clear()
-	for id: Variant in data.get("module_library", []):
-		module_library.append(String(id))
 	factory_blob = String(data.get("factory", ""))
+	bay_blob = String(data.get("bay", ""))
+	cargo_rows_bonus = clampi(int(data.get("cargo_rows_bonus", 0)), 0, CARGO_BONUS_MAX)
 	machine_levels.clear()
 	var saved_levels: Dictionary = data.get("machine_levels", {})
 	for id: Variant in saved_levels:
@@ -447,3 +762,23 @@ func load_game() -> void:
 	for need: Variant in saved_needs:
 		lair_needs[String(need)] = int(saved_needs[need])
 	beacon_sent = bool(data.get("beacon_sent", false))
+	colony = int(data.get("colony", 3))
+	roster.clear()
+	for rec: Variant in data.get("roster", []):
+		if rec is Dictionary:
+			var tool_id := String(rec.get("tool", STARTER_TOOL))
+			if not TOOLS.has(tool_id):
+				tool_id = STARTER_TOOL  # migrate a pre-tool save
+			roster.append({"name": String(rec.get("name", "Goblin")), "hauled": int(rec.get("hauled", 0)), "tool": tool_id})
+	fallen.clear()
+	for rec: Variant in data.get("fallen", []):
+		if rec is Dictionary:
+			fallen.append({"name": String(rec.get("name", "Goblin")), "hauled": int(rec.get("hauled", 0))})
+	tools_found.clear()
+	for tid: Variant in data.get("tools_found", []):
+		if TOOLS.has(String(tid)):
+			tools_found.append(String(tid))
+	quests_claimed.clear()
+	for qid: Variant in data.get("quests_claimed", []):
+		quests_claimed.append(String(qid))
+	ensure_roster()  # migrate a pre-roster save (or seed a fresh one) from the legacy count

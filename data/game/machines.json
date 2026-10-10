@@ -1,16 +1,6 @@
 {
   "_comment": "Grid machines for the inventory-factory. Offsets are [x,y] relative to the core cell. 'inputs' = cells read (set-based: a recipe matches when its needs are present across the input cells). 'outputs' = cells written (a recipe's produces are distributed across free output cells). Recipes live in recipes.json keyed by machine. 'cost' is spent from the factory on a NEW build (placing from your machine stock is free). 'locked' machines unlock when 'unlock_requires' (cumulative Mars deliveries) is met. 'world:true' would mark a room/utility station (none here — those are separate interactable scripts).",
   "machines": {
-    "scrapper_arm": {
-      "name": "Scrapper Arm",
-      "icon": "scrapper_arm",
-      "color": "c9a24a",
-      "cost": {},
-      "inputs": [],
-      "outputs": [],
-      "holding": [[1, 0], [2, 0], [3, 0], [4, 0]],
-      "_note": "A 5-cell machine: core + 4 typed scrap slots along the bar (copper/steel/plastic/ceramic). Harvested scrap stacks into its matching slot (cell kind 'arm_slot'). Recyclers placed so an input cell touches a slot PULL that scrap straight out (no conveyor/insert). Pre-placed and persists."
-    },
     "scrap_recycler": {
       "name": "Scrap Recycler",
       "icon": "scrap_recycler",
@@ -35,10 +25,12 @@
     "frame_maker": { "name": "Frame Maker", "icon": "comp_maker_frame", "color": "9aa6b2", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
     "thermal_maker": { "name": "Thermal Maker", "icon": "comp_maker_thermal", "color": "e06a6a", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
 
-    "copper_weapon":  { "name": "Copper Blaster",  "icon": "weapon_copper",  "color": "c8722e", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "copper",  "ammo": "charge_cells",    "damage": 2, "cooldown": 0.25, "projectile_speed": 460, "cost": {"copper": 3}, "_note": "Found broken; repairs into a family weapon. Feed its ammo into the input slot; combat draws from there (see PlayerCombat / FactoryGrid.try_fire_weapon)." },
-    "steel_weapon":   { "name": "Steel Cannon",    "icon": "weapon_steel",   "color": "b9c2cc", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "steel",   "ammo": "steel_slugs",     "damage": 6, "cooldown": 0.70, "projectile_speed": 360, "cost": {"copper": 3} },
-    "plastic_weapon": { "name": "Resin Repeater",  "icon": "weapon_plastic", "color": "3fb6a8", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "plastic", "ammo": "resin_capsules",  "damage": 2, "cooldown": 0.45, "projectile_speed": 410, "pellets": 3, "spread_deg": 22, "cost": {"copper": 3}, "_note": "Spread: one trigger-pull fires 3 pellets in a fan (spread_deg)." },
-    "ceramic_weapon": { "name": "Ceramic Lance",   "icon": "weapon_ceramic", "color": "e0d7c0", "inputs": [[-1, 0]], "outputs": [], "weapon": true, "family": "ceramic", "ammo": "ceramic_charges", "damage": 4, "cooldown": 0.52, "projectile_speed": 420, "pierce": 2, "cost": {"copper": 3}, "_note": "Pierce: the shot passes through up to 2 enemies (hits 3 in a line)." },
+    "copper_weapon":  { "name": "Copper Blaster",  "icon": "weapon_copper",  "color": "c8722e", "bay": true, "core_size": 2, "weapon": true, "family": "copper",  "ammo": "charge_cells",    "damage": 2, "cooldown": 0.25, "projectile_speed": 460, "cost": {"copper": 3}, "_note": "A BAY module (just a shape — no in/out ports). Draws from the bot's loaded ammo (made in the workshop). See PlayerCombat / FactoryGrid.weapon_stats." },
+    "steel_weapon":   { "name": "Steel Cannon",    "icon": "weapon_steel",   "color": "b9c2cc", "bay": true, "core_size": 2, "weapon": true, "family": "steel",   "ammo": "steel_slugs",     "damage": 6, "cooldown": 0.70, "projectile_speed": 360, "cost": {"copper": 3} },
+    "plastic_weapon": { "name": "Resin Repeater",  "icon": "weapon_plastic", "color": "3fb6a8", "bay": true, "core_size": 2, "weapon": true, "family": "plastic", "ammo": "resin_capsules",  "damage": 2, "cooldown": 0.45, "projectile_speed": 410, "pellets": 3, "spread_deg": 22, "cost": {"copper": 3}, "_note": "Spread: one trigger-pull fires 3 pellets in a fan (spread_deg)." },
+    "ceramic_weapon": { "name": "Ceramic Lance",   "icon": "weapon_ceramic", "color": "e0d7c0", "bay": true, "core_size": 2, "weapon": true, "family": "ceramic", "ammo": "ceramic_charges", "damage": 4, "cooldown": 0.52, "projectile_speed": 420, "pierce": 2, "cost": {"copper": 3}, "_note": "Pierce: the shot passes through up to 2 enemies (hits 3 in a line)." },
+
+    "ammo_loader": { "name": "Ammo Loader", "icon": "ammo_loader", "color": "ffcf6a", "bay": true, "module": true, "core_size": 1, "fire_rate": 0.35, "cost": {"copper": 2}, "_note": "A BAY module (shape only, no ports). Each one speeds up every weapon's fire rate by its fire_rate (see FactoryGrid.fire_rate_multiplier). Stack them for faster shooting." },
 
 
     "grinder": {

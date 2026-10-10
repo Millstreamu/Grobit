@@ -1,7 +1,7 @@
 extends Node
 ## Tech-Data meta: permanent machine upgrades (bought at a System Terminal) make a machine
 ## TYPE faster, persist via MetaState, and apply to every placed machine of that type. Also:
-## run-end no longer auto-banks Tech Data (you must upload it at a terminal).
+## Tech Data is an inventory ITEM now — earning it keeps it in the grid (no separate bank).
 
 var fail := 0
 
@@ -12,7 +12,7 @@ func _ready() -> void:
 	# Upgrade bookkeeping (pure reads).
 	_ck(MetaState.machine_level("copper_recycler") == 1, "machines default to level 1")
 	_ck(MetaState.can_upgrade_machine("copper_recycler"), "can upgrade below max")
-	_ck(MetaState.machine_upgrade_cost("copper_recycler") == 3, "upgrade cost is 3 × current level")
+	_ck(MetaState.machine_upgrade_cost("copper_recycler") == {"copper": 2}, "upgrade cost is refined material (2 × level, in the machine's material)")
 	MetaState.machine_levels["copper_recycler"] = MetaState.MAX_MACHINE_LEVEL
 	_ck(not MetaState.can_upgrade_machine("copper_recycler"), "can't upgrade past max level")
 
@@ -29,13 +29,12 @@ func _ready() -> void:
 		g3.tick(0.5)  # 2.5s elapsed
 	_ck(String(g3.get_cell(Vector2i(3, 2)).get("id", "")) == "metal_bar", "a level-3 smelter IS done at 2.5s (upgrade = faster)")
 
-	# Run-end no longer auto-banks Tech Data — it must be uploaded at a terminal.
+	# Tech Data is a grid item now — earning it keeps it in the inventory (no separate bank).
 	MetaState.machine_levels = {}
 	RunState.begin_run(GameData.first_area_id(), 1)
-	RunState.add("tech_data", 7)  # earned in-run
-	var banked_before := MetaState.tech_data
+	RunState.add("tech_data", 7)  # scrapped a machine in the workshop
 	RunState.end_run(RunState.RESULT_SHIPPED)
-	_ck(MetaState.tech_data == banked_before, "end_run no longer auto-banks Tech Data")
+	_ck(RunState.get_quantity("tech_data") == 7, "earned Tech Data stays in the inventory (a grid item)")
 
 	MetaState.machine_levels = {}  # leave MetaState as we found it (in-memory)
 

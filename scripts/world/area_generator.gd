@@ -46,6 +46,7 @@ var _repair_config: Dictionary = {}
 var _spawner_config: Dictionary = {}
 var _salvage_loot: Array = []
 var _machine_finds: Dictionary = {}
+var _tool_finds: Dictionary = {}
 var _hazard_config: Dictionary = {}
 
 # Generation params, loaded by build_lair() and reused when the facility is generated later.
@@ -119,13 +120,16 @@ func generate_facility(run_seed: int) -> void:
 
 	_build_rooms(run_seed, room_count, types, _enemy_min, _enemy_max, _enemy_id, _enemy_weights)
 	_render_facility()
+	# Tier-weight the scrap piles for the player's current arm level (current tier full, next tier
+	# a teaser, beyond hidden) so the map reads as "about where you are".
+	_harvest_config = _tier_scaled_harvest(_harvest_config)
 	for i in range(1, rooms.size()):
 		rooms[i].build_trigger()
 		_populate_room(rooms[i], _enemy_id)
 
 	_spawn_guaranteed_chain(rng)
 	_spawn_component_exchange(rng)
-	_spawn_system_terminal(rng)
+	# The System Terminal lives in the LAIR now (placed by RunController), not out in the run.
 	_build_minimap_edges(connections)
 
 
@@ -170,6 +174,7 @@ func _load_params(area_id: String) -> void:
 	_salvage_loot = shape.get("salvage_loot", area.get("salvage_loot", []))
 	_hazard_config = shape.get("hazard", area.get("hazard", {}))
 	_machine_finds = shape.get("machine_finds", area.get("machine_finds", {}))
+	_tool_finds = shape.get("tool_finds", area.get("tool_finds", {}))
 
 	_facility_built = false
 	_floors = _make_container("Floors", -2)
@@ -803,6 +808,7 @@ func _populate_room(room: Room, enemy_id: String) -> void:
 	if room.room_type != Room.RoomType.START:
 		room.spawn_harvest(_harvest_config)
 		_maybe_spawn_machine(room)
+		_maybe_spawn_tool(room)
 		_maybe_spawn_fabricator(room)
 	match room.room_type:
 		Room.RoomType.SALVAGE:
@@ -842,6 +848,41 @@ func _maybe_spawn_machine(room: Room) -> void:
 		pickup.repair_cost = _repair_cost_for(String(cat.get("category", "Machine")), spec)
 		room.add_child(pickup)
 		pickup.global_position = position
+
+
+## Scrap TOOLS are found in the field — the main progression find (a better tool lets a goblin
+## strip a higher scrap tier). Each non-start room has a small chance to hold one, its tier
+## weighted toward the colony's frontier + 1 (the upgrade you want), with a rare reach beyond.
+func _maybe_spawn_tool(room: Room) -> void:
+	var chance := float(_tool_finds.get("chance", 0.14))
+	if room.rng.randf() >= chance:
+		return
+	var position: Variant = room.claim_random_prop_tile()
+	if position == null:
+		return
+	var pickup := ToolPickup.new()
+	pickup.tool_id = _roll_tool_id(room.rng)
+	room.add_child(pickup)
+	pickup.global_position = position
+
+
+## Picks a tool tier weighted toward the colony's current frontier + 1 (the useful next step),
+## current tier as common, and tiers beyond as rare teasers. Returns the matching tool id.
+func _roll_tool_id(rng: RandomNumberGenerator) -> String:
+	var frontier := MetaState.best_tool_tier()
+	var want := mini(frontier + 1, 4)   # the upgrade you're after
+	var r := rng.randf()
+	var tier: int
+	if r < 0.60:
+		tier = want
+	elif r < 0.85:
+		tier = maxi(1, frontier)         # a spare at your current reach
+	else:
+		tier = mini(want + 1, 4)         # a rare taste of further ahead
+	for id: String in MetaState.TOOLS:
+		if int(MetaState.TOOLS[id].get("tier", 0)) == tier:
+			return id
+	return MetaState.STARTER_TOOL
 
 
 ## Material tier order (the tech ladder): steel 1 → copper 2 → plastic 3 → ceramic 4.
@@ -885,16 +926,71 @@ func _weighted_category(categories: Array, rng: RandomNumberGenerator) -> Dictio
 	return categories[categories.size() - 1]
 
 
-## Weighted pick of one spec id from a category pool.
+# Tier-weighting: the generated world biases toward your CURRENT + NEXT tier (what you can
+# actually use), with higher tiers as rare teasers. Material tier is read from the def id;
+# non-tiered machines (component makers, transport) stay neutral. The colony's BEST TOOL TIER is
+# the frontier (the highest scrap any goblin can currently strip).
+const _TIER_WEIGHT_NEXT := 0.4   # next-tier finds/piles (a taste of what's ahead)
+const _TIER_WEIGHT_BEYOND := 0.1 # two-or-more tiers ahead — rare
+
+
+## A scrap id's tier (1 steel … 4 ceramic), or 0 if it isn't one of the four scraps.
+func _scrap_tier(scrap_id: String) -> int:
+	return FactoryGrid.scrap_tier(scrap_id)
+
+
+## A copy of the harvest config with each scrap pile's spawn count scaled to the player's tier:
+## current tiers spawn fully, the NEXT tier is a thinner teaser, and tiers beyond that don't
+## litter the map. Keeps the world reading as "about where you are" without hiding the next step.
+func _tier_scaled_harvest(config: Dictionary) -> Dictionary:
+	var cfg := config.duplicate(true)
+	var nodes: Array = cfg.get("nodes", [])
+	var lvl := MetaState.best_tool_tier()
+	for node_variant: Variant in nodes:
+		var node: Dictionary = node_variant
+		var pool: Array = node.get("pool", [])
+		if pool.is_empty():
+			continue
+		var scrap := String(pool[0].get("id", "")) if pool[0] is Dictionary else String(pool[0])
+		var t := _scrap_tier(scrap)
+		if t == 0 or t <= lvl:
+			continue  # non-scrap or already-unlocked: leave at full
+		if t == lvl + 1:
+			node["per_room_max"] = mini(int(node.get("per_room_max", 2)), 1)  # next-tier teaser
+		else:
+			node["per_room_min"] = 0
+			node["per_room_max"] = 0  # further tiers don't clutter the map
+	return cfg
+
+
+## How much to favour a tiered spec given the player's arm level: 1.0 at/under their tier, a
+## taste of the next tier, and rare beyond. 1.0 for anything without a material tier.
+func _tier_weight(id: String) -> float:
+	var t := int(_MATERIAL_TIER.get(_material_of(id), 0))
+	if t == 0:
+		return 1.0
+	var lvl := MetaState.best_tool_tier()
+	if t <= lvl:
+		return 1.0
+	if t == lvl + 1:
+		return _TIER_WEIGHT_NEXT
+	return _TIER_WEIGHT_BEYOND
+
+
+## Weighted pick of one spec id from a category pool, biased toward the player's current tier.
 func _pick_spec(pool: Array, rng: RandomNumberGenerator) -> String:
 	if pool.is_empty():
 		return ""
+	var weight := func(e: Variant) -> float:
+		var base := float(e.get("weight", 1)) if e is Dictionary else 1.0
+		var id := String(e.get("id", "")) if e is Dictionary else String(e)
+		return base * _tier_weight(id)
 	var total := 0.0
 	for e: Variant in pool:
-		total += float(e.get("weight", 1)) if e is Dictionary else 1.0
-	var pick := rng.randf() * total
+		total += weight.call(e)
+	var pick := rng.randf() * maxf(total, 0.0001)
 	for e: Variant in pool:
-		pick -= float(e.get("weight", 1)) if e is Dictionary else 1.0
+		pick -= weight.call(e)
 		if pick <= 0.0:
 			return String(e.get("id", "")) if e is Dictionary else String(e)
 	var last: Variant = pool[pool.size() - 1]
@@ -953,6 +1049,15 @@ func _default_find_categories() -> Array:
 			],
 		},
 		{
+			"category": "Ammo Loader",
+			"weight": 1,
+			"no_guarantee": true,  # a scarce bay module: speeds up every weapon's fire rate
+			"repair_cost": {"copper": 2},
+			"pool": [
+				{"id": "ammo_loader", "weight": 1},
+			],
+		},
+		{
 			"category": "Transport",
 			"weight": 3,
 			"no_guarantee": true,  # transport is a found-and-repaired item now, never guaranteed
@@ -983,26 +1088,6 @@ func _spawn_component_exchange(rng: RandomNumberGenerator) -> void:
 			var exchange := ComponentExchange.new()
 			room.add_child(exchange)
 			exchange.global_position = position
-			return
-
-
-## Exactly one System Terminal spawns out in the map (never the start room) — where you
-## upload Tech Data to the base and buy permanent machine upgrades.
-func _spawn_system_terminal(rng: RandomNumberGenerator) -> void:
-	var non_start: Array = []
-	for r: Room in rooms:
-		if r.room_type != Room.RoomType.START and not r.interior_tiles.is_empty():
-			non_start.append(r)
-	if non_start.is_empty():
-		return
-	var start := rng.randi_range(0, non_start.size() - 1)
-	for offset in non_start.size():
-		var room: Room = non_start[(start + offset) % non_start.size()]
-		var position: Variant = room.claim_random_prop_tile()
-		if position != null:
-			var terminal := SystemTerminal.new()
-			room.add_child(terminal)
-			terminal.global_position = position
 			return
 
 

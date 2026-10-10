@@ -11,7 +11,6 @@ func _ready() -> void:
 
 	# --- combine is category-aware: two recyclers → a DIFFERENT recycler ---
 	var f := FactoryGrid.new(8, 8)
-	f.place_machine("scrapper_arm", Vector2i(0, 0))
 	f.place_machine("copper_recycler", Vector2i(3, 1))
 	f.place_machine("steel_recycler", Vector2i(3, 4))
 	f.place_machine("steel_ammo_maker", Vector2i(6, 1))
@@ -75,7 +74,6 @@ func _ready() -> void:
 
 	# --- scrap a machine instance held in hand → tech data ---
 	RunState.factory = FactoryGrid.new(8, 8)
-	RunState.factory.place_machine("scrapper_arm", Vector2i(0, 0))
 	RunState.machine_instances = []
 	panel._reset_modes()
 	RunState.add_machine_instance("copper_recycler")
@@ -88,7 +86,6 @@ func _ready() -> void:
 
 	# --- scrap a placed machine lifted for a move → tech data ---
 	var h := FactoryGrid.new(8, 8)
-	h.place_machine("scrapper_arm", Vector2i(0, 0))
 	var mi := h.place_machine("steel_recycler", Vector2i(4, 4))
 	RunState.factory = h
 	panel._reset_modes()

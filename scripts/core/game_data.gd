@@ -14,10 +14,10 @@ var tech: Dictionary = {}
 var enemies: Dictionary = {}
 var abilities: Dictionary = {}
 var machines: Dictionary = {}
-var modules: Dictionary = {}
 var generation: Dictionary = {}
 var areas: Dictionary = {}
 var families: Dictionary = {}  # material family -> {name, letter, ammo, ammo_maker}
+var quests: Array = []  # colony quests shown on the lair terminal's Tasks tab (see quests.json)
 
 
 func _ready() -> void:
@@ -29,11 +29,11 @@ func _ready() -> void:
 	abilities = _load("abilities.json").get("abilities", {})
 	# Factory machines that live in the inventory grid (inventory-factory redesign).
 	machines = _load("machines.json").get("machines", {})
-	modules = _load("modules.json").get("modules", {})
 	# Map-shape parameters authored in the Config Studio tool (optional file).
 	generation = _load("generation.json").get("generation", {})
 	areas = _load("area.json").get("areas", {})
 	families = _load("families.json").get("families", {})
+	quests = _load("quests.json").get("quests", [])
 
 
 func resource_name(id: String) -> String:

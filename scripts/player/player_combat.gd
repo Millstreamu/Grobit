@@ -1,14 +1,16 @@
 class_name PlayerCombat
 extends Node
-## Grobit's Shoot: fully automatic. Auto-targets and fires at the nearest (or
-## Tab-picked) enemy in range whenever off cooldown — no button needed. Space is
-## free for the equipped ability. Shoot upgrades (e.g. Aegis Rounds) hook in here.
+## Grobit's Shoot: a MANUAL turret. Auto-AIMS at the nearest (or Tab-picked) enemy in range; the
+## player taps [Space] / LMB to fire one shot per press (cooldown caps the rate). Shoot upgrades (e.g. Aegis Rounds)
+## hook in here. (Firing used to be automatic; it's now the only counter-play in a hot room — see
+## docs/DESIGN_SPEC.md §0.2.)
 
 const PROJECTILE_SCENE := preload("res://scenes/combat/projectile.tscn")
 
 @export_category("Weapon-stat fallbacks + range")
-## There is NO built-in gun: all firepower comes from a placed, ammo-fed weapon machine
-## (see FactoryGrid.try_fire_weapon). These damage/cooldown/speed values are only used if a
+## There is NO built-in gun: all firepower comes from a placed weapon module drawing the bot's
+## loaded ammo (see FactoryGrid.weapon_stats + RunState.consume_ammo). These damage/cooldown/speed
+## fallbacks are only used if a
 ## weapon def omits a field; attack_range is how far Grobit auto-targets.
 @export var damage := 1
 @export var attack_range := 220.0
@@ -41,7 +43,10 @@ func _process(delta: float) -> void:
 		return
 	if Input.is_action_just_pressed("cycle_target"):
 		_cycle_target()
-	attack_nearest()  # automatic — fires whenever a target is in range and off cooldown
+	# MANUAL turret: the gun auto-AIMS (nearest / Tab-picked target); the player taps [Space] (or LMB)
+	# to fire ONE shot per press. Cooldown still caps how fast consecutive shots can land (fire rate).
+	if Input.is_action_just_pressed("attack"):
+		attack_nearest()
 
 
 ## The enemy Shoot is currently aiming at: the manually picked target if it's still
@@ -62,16 +67,18 @@ func attack_nearest() -> bool:
 	var target := _resolve_target()
 	if target == null:
 		return false
-	# You can ONLY deal damage through a placed weapon that's loaded with its ammo — there is
-	# no built-in gun. No loaded weapon → no shot (and no ammo spent). This ties all firepower
-	# to the production chain.
-	if RunState.factory == null:
+	# Firepower comes ONLY from a weapon module in the bot's MODULE BAY — no built-in gun. The
+	# weapon draws from the bot's loaded ammo reserve (made in the workshop, loaded at launch); no
+	# weapon or no ammo → no shot. Ammo Loader modules speed up the fire rate.
+	if RunState.bay == null:
 		return false
-	var shot := RunState.factory.try_fire_weapon()
+	var shot := RunState.bay.weapon_stats()
 	if shot.is_empty():
 		return false
+	if not RunState.consume_ammo(String(shot.get("ammo", ""))):
+		return false  # out of ammo — make more in the workshop and reload next run
 	var dmg := int(round(float(shot.get("damage", damage))))
-	var cd := float(shot.get("cooldown", cooldown))
+	var cd := float(shot.get("cooldown", cooldown)) / maxf(RunState.bay.fire_rate_multiplier(), 0.01)
 	var spd := float(shot.get("projectile_speed", projectile_speed))
 	var pellets := maxi(1, int(shot.get("pellets", 1)))       # plastic: spread
 	var spread := deg_to_rad(float(shot.get("spread_deg", 0.0)))

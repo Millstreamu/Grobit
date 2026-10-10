@@ -21,6 +21,14 @@
       "effect": "shoot_upgrade",
       "value": "aegis_rounds",
       "desc": "Every 3 shots, gain a 1s shield."
-    }
+    },
+
+    "repair_t2": { "name": "Tier-2 Repairs",  "cost": 2, "effect": "repair_tier", "value": 2, "desc": "Goblins can repair copper-tier machines." },
+    "repair_t3": { "name": "Tier-3 Repairs",  "cost": 3, "effect": "repair_tier", "value": 3, "desc": "Goblins can repair plastic-tier machines." },
+    "repair_t4": { "name": "Tier-4 Repairs",  "cost": 4, "effect": "repair_tier", "value": 4, "desc": "Goblins can repair ceramic-tier machines." },
+
+    "tools_t2": { "name": "Copper Toolsmithing",  "cost": 2, "effect": "tool_tier", "value": 2, "desc": "Equip + upgrade tools to copper tier." },
+    "tools_t3": { "name": "Polymer Toolsmithing", "cost": 3, "effect": "tool_tier", "value": 3, "desc": "Equip + upgrade tools to plastic tier." },
+    "tools_t4": { "name": "Ceramic Toolsmithing", "cost": 4, "effect": "tool_tier", "value": 4, "desc": "Equip + upgrade tools to ceramic tier." }
   }
 }

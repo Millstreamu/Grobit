@@ -1,17 +1,20 @@
 extends Node
-## Headless test for Step 2: the FactoryProcessor must tick the factory in real
-## time EVEN WHILE THE TREE IS PAUSED (the factory panel pauses the world). Run:
+## Headless test for the lair workshop processor: the FactoryProcessor ticks the factory in real
+## time while you're at the LAIR (run active, not driving) EVEN WHILE THE TREE IS PAUSED (the
+## factory panel pauses the world). Run:
 ##   godot --headless --path . res://scenes/test/factory_process_test.tscn
 ## Exits 0 on success. Takes ~4s (real time) because it drives the 3s recipe live.
 
 func _ready() -> void:
 	var failures := 0
 
-	# arm at (0,0) → output (1,0); refiner at (2,0) reads (1,0), writes (3,0).
+	# refiner at (2,0) reads (1,0), writes (3,0).
 	RunState.factory = FactoryGrid.new(6, 3)
-	RunState.factory.place_machine("scrapper_arm", Vector2i(0, 0))
 	RunState.factory.place_machine("smelter", Vector2i(2, 0))
 	RunState.factory.set_cell(Vector2i(1, 0), {"kind": "resource", "id": "scrap_metal"})
+	# Lair phase: a run is set up but you haven't driven out — the workshop refines here.
+	RunState.run_active = true
+	RunState.driving = false
 
 	add_child(FactoryProcessor.new())
 

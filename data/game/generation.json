@@ -94,6 +94,10 @@
       "per_room_max": 1,
       "fabricator_chance": 0.2
     },
+    "tool_finds": {
+      "_note": "Scrap TOOLS found in the field. A better tool is how a goblin reaches a higher scrap tier (steel\u2192copper\u2192plastic\u2192ceramic). Per-room chance; tier is weighted toward the colony's frontier + 1 (see AreaGenerator._roll_tool_id). Equip found tools at the System Terminal.",
+      "chance": 0.14
+    },
     "spawner": {
       "markers": 1,
       "base_count": 3,

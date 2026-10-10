@@ -6,7 +6,6 @@ func _ready() -> void:
 	var failures := 0
 
 	RunState.factory = FactoryGrid.new(5, 4)
-	RunState.factory.place_machine("scrapper_arm", Vector2i(0, 0))
 
 	RunState.add("scrap_metal", 4)
 	RunState.add("electronic_scrap", 1)

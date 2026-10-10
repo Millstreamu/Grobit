@@ -8,9 +8,19 @@ extends StaticBody2D
 @export var tile_size := Vector2i(32, 32)
 ## How close the player must be (px) to toggle the door with F.
 @export var interact_radius := 34.0
+## Out in the field (RunState.driving), opening a door is a HACK (Phase 2.3): harder `difficulty` =
+## a longer switch pattern + a tighter dial; opening adds `alarm` Heat. A botched hack spikes Heat and
+## jams the door for HACK_LOCK_TIME. At the lair these are ignored (plain open/close). Generation sets
+## them per-room; these are the defaults.
+@export var difficulty := 1
+@export var alarm := 15.0
+
+const HACK_FAIL_SPIKE := 12.0
+const HACK_LOCK_TIME := 6.0
 
 var _open := false     # player-controlled state; doors start closed
 var _forced := false   # room combat-seal: can't be opened by hand while true
+var _hack_lock := 0.0  # >0: a botched hack jammed it; can't re-hack until it ticks down
 var _sprite: Sprite2D
 var _collision: CollisionShape2D
 var _occluder: LightOccluder2D
@@ -60,9 +70,16 @@ func unlock() -> void:
 
 # ---- interactable interface (F) ----
 
+func _process(delta: float) -> void:
+	if _hack_lock > 0.0:
+		_hack_lock = maxf(_hack_lock - delta, 0.0)
+
+
 func can_interact() -> bool:
 	if _forced:
 		return false
+	if _open and RunState.driving:
+		return false  # already hacked open out in the field — nothing left to do here
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	return player != null and global_position.distance_to(player.global_position) <= interact_radius
 
@@ -76,6 +93,19 @@ func interact_priority() -> int:
 func interact() -> void:
 	if _forced:
 		return
+	# Out in the field, opening a door is a HACK (reveal alarm → open/skip; botched = Heat spike + lock).
+	if RunState.driving:
+		if _open:
+			return
+		if _hack_lock > 0.0:
+			_log("The hack jammed the door — locked for a moment.")
+			return
+		for hud: Node in get_tree().get_nodes_in_group("hud"):
+			if hud.has_method("open_hack"):
+				hud.open_hack(self)
+				return
+		return
+	# At the lair (not driving): plain manual open/close.
 	if _open:
 		# Don't close a door on top of the player (they'd be stuck in the wall).
 		var player := get_tree().get_first_node_in_group("player") as Node2D
@@ -87,8 +117,33 @@ func interact() -> void:
 	_refresh()
 
 
+## Called by HackPanel on a cracked-and-opened hack: open the door and add the room's alarm to Heat.
+func hack_open(alarm_amount: float) -> void:
+	_open = true
+	RunState.add_heat(alarm_amount)
+	_refresh()
+
+
+## Called by HackPanel on a botched hack: a Heat spike, and the door jams shut for a while.
+func hack_fail() -> void:
+	RunState.add_heat(HACK_FAIL_SPIKE)
+	_hack_lock = HACK_LOCK_TIME
+	_refresh()
+
+
 func interaction_prompt() -> String:
-	return "[F] Close door" if _open else "[F] Open door"
+	if not RunState.driving:
+		return "[F] Close door" if _open else "[F] Open door"
+	if _hack_lock > 0.0:
+		return "Door jammed (hack failed)"
+	return "[F] Hack the door"
+
+
+func _log(text: String) -> void:
+	for hud: Node in get_tree().get_nodes_in_group("hud"):
+		if hud.has_method("log_message"):
+			hud.log_message(text)
+			return
 
 
 func selection_size() -> int:

@@ -13,15 +13,14 @@ func _ready() -> void:
 		if p is MachinePickup and p.broken:
 			brokens += 1
 	ck(brokens > 0, "broken machines spawn in rooms (%d)" % brokens)
-	# 2. scrap piles harvest typed scrap into the Scrapper Arm machine's slot (steel = tier 1)
-	MetaState.machine_levels = {}  # arm level 1 (steel unlocked)
+	# 2. scrap piles harvest typed scrap into the inventory grid (feeds top-left)
+	MetaState.machine_levels = {}
 	var node := ScrapNode.new()
 	node.generate({"label":"j","tokens_min":6,"tokens_max":6,"rust_chance":0.0,"pool":[{"id":"steel_scrap","weight":1}]})
 	RunState.factory = FactoryGrid.new(8, 8)
-	RunState.factory.place_scrapper_arm(Vector2i(0, 0))
 	add_child(node)
-	node.hold_interact(ScrapNode.HARVEST_SECONDS + 0.1)
-	ck(RunState.factory.arm_slot_count("steel_scrap") >= 1, "scrapping stacks typed scrap into the arm")
+	RunState.deposit(node.take_one(), 1)  # a goblin pulls a piece and hauls it into the grid
+	ck(int(RunState.factory.resource_counts().get("steel_scrap", 0)) >= 1, "scrapping feeds typed scrap into the grid")
 	# 3. repair a broken recycler -> specialised recycler in stock (paid in refined materials)
 	RunState.factory = FactoryGrid.new(8, 8)  # fresh grid for clean accounting
 	RunState.machine_instances = []
@@ -30,7 +29,8 @@ func _ready() -> void:
 	mp.broken = true; mp.category = "Recycler"; mp.repair_cost = {"copper": 2}
 	mp.spec_pool = [{"id":"copper_recycler","weight":1}, {"id":"steel_recycler","weight":1}]
 	add_child(mp)
-	mp._repair()
+	var repaired := mp.repair_and_take()          # a goblin repairs it (spends the cost)…
+	RunState.add_machine_instance(repaired)        # …and banks it on reaching the bot
 	var got := RunState.instance_count()
 	var did := String(RunState.machine_instances[0].get("def_id", "")) if got == 1 else ""
 	ck(got == 1 and (did == "copper_recycler" or did == "steel_recycler"), "repair specialised into one recycler instance")

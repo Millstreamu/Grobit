@@ -1,18 +1,18 @@
 extends Node
-## Persistent factory: the LAYOUT (machines, transport, levels, modules) survives a
-## save/load round-trip; loose resources, items on belts, cache contents and in-flight
-## progress reset each run. MetaState carries the layout as a var_to_str blob.
+## Persistent factory: the LAYOUT (machines, transport, inserters) AND the base inventory (loose
+## resources + cache contents) survive a save/load round-trip — what the colony hauls home stays
+## in your base. Only in-transit state (items riding belts) and in-flight progress reset. MetaState
+## carries it all as a var_to_str blob.
 
 var fail := 0
 
 
 func _ready() -> void:
 	var g := FactoryGrid.new(8, 8)
-	var mi := g.place_machine("copper_recycler", Vector2i(3, 3))
-	g.machines[mi]["level"] = 3  # pretend it was permanently upgraded
+	g.place_machine("copper_recycler", Vector2i(3, 3))
 	g.place_conveyor(Vector2i(5, 5), Vector2i(1, 0))
-	g.get_cell(Vector2i(5, 5))["item"] = "copper"  # riding a belt — shouldn't persist
-	g.set_cell(Vector2i(2, 2), {"kind": "resource", "id": "copper", "count": 3})  # loose — shouldn't persist
+	g.get_cell(Vector2i(5, 5))["item"] = "copper"  # riding a belt — shouldn't persist (in-transit)
+	g.set_cell(Vector2i(2, 2), {"kind": "resource", "id": "copper", "count": 3})  # base inventory — persists
 	var ci := g.place_machine("storage_cache", Vector2i(6, 1))
 	g.machines[ci]["cached_count"] = 9
 	g.machines[ci]["cached_id"] = "copper"
@@ -23,11 +23,10 @@ func _ready() -> void:
 
 	_ck(g2.cols == 8 and g2.rows == 8, "grid dimensions preserved")
 	_ck(g2.machine_at(Vector2i(3, 3)) >= 0, "a placed machine persists")
-	_ck(g2.level_of(g2.machine_at(Vector2i(3, 3))) == 3, "a machine's level persists")
 	_ck(String(g2.get_cell(Vector2i(5, 5)).get("kind", "")) == "conveyor", "a conveyor persists")
-	_ck(String(g2.get_cell(Vector2i(5, 5)).get("item", "")) == "", "an item riding a belt does NOT persist")
-	_ck(g2.get_cell(Vector2i(2, 2)).is_empty(), "loose resources do NOT persist")
-	_ck(int(g2.cache_state(g2.machine_at(Vector2i(6, 1))).get("count", -1)) == 0, "cache contents do NOT persist")
+	_ck(String(g2.get_cell(Vector2i(5, 5)).get("item", "")) == "", "an item riding a belt does NOT persist (in-transit)")
+	_ck(String(g2.get_cell(Vector2i(2, 2)).get("id", "")) == "copper" and int(g2.get_cell(Vector2i(2, 2)).get("count", 0)) == 3, "base-inventory resources persist")
+	_ck(int(g2.cache_state(g2.machine_at(Vector2i(6, 1))).get("count", -1)) == 9, "cache contents persist")
 
 	# The reloaded recycler still processes (its recipe wiring survives).
 	g2.set_cell(Vector2i(2, 3), {"kind": "resource", "id": "copper_scrap"})  # its input (core + [-1,0])

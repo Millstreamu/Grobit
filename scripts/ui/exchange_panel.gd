@@ -24,6 +24,7 @@ const MACHINE_POOL := [
 	"copper_recycler", "steel_recycler", "plastic_recycler", "ceramic_recycler",
 	"copper_ammo_maker", "steel_ammo_maker", "plastic_ammo_maker", "ceramic_ammo_maker",
 	"coupling_maker", "control_maker", "frame_maker", "thermal_maker",
+	"ammo_loader",
 ]
 
 var _message := ""

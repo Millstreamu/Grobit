@@ -41,9 +41,9 @@ func interaction_prompt() -> String:
 
 
 func interact() -> void:
-	# Typed scrap stacks in the Scrapper Arm and Tech Data on the top bar — both uncapped and
-	# always collectable. Anything bound for the grid still needs a free cell.
-	var off_grid := resource_id in RunState.ARM_SCRAP_TYPES or resource_id in RunState.BAR_CURRENCIES
+	# Tech Data on the top bar is uncapped and always collectable. Everything else — typed scrap
+	# included (it now feeds the inventory grid) — needs a free cell.
+	var off_grid := resource_id in RunState.BAR_CURRENCIES
 	if not off_grid and not RunState.has_space():
 		for hud: Node in get_tree().get_nodes_in_group("hud"):
 			if hud.has_method("log_message"):

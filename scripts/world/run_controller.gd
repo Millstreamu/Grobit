@@ -45,9 +45,12 @@ func _ready() -> void:
 		var saved := MetaState.load_factory()
 		if saved != null:
 			RunState.factory = saved
-	_ensure_scrapper_arm()  # every factory needs the Scrapper Arm (also migrates older saves)
 	if fresh_factory:
-		_seed_starter_factory()  # first run ever: a Copper Recycler next to the arm
+		_seed_starter_factory()  # first run ever: a Steel Recycler to get the economy going
+	# The module-bay loadout persists too — load the saved one over the empty bay.
+	var saved_bay := MetaState.load_bay()
+	if saved_bay != null:
+		RunState.bay = saved_bay
 
 	generator = AreaGenerator.new()
 	generator.name = "Area"
@@ -93,7 +96,17 @@ func _ready() -> void:
 	add_child(scrapbot)
 	scrapbot.global_position = scrapbot_pos
 	lighting.add_lamp(scrapbot_pos, 100.0, 1.0, Color(0.7, 1.0, 0.7))
-	# (Component Exchange + System Terminal now spawn out in the map, not here.)
+
+	# The System Terminal lives in the LAIR — all upgrading/recruiting/uploading happens at base,
+	# never out in a run. Place it on a free lair tile away from the scrapbot.
+	if _lair != null:
+		var term_pos: Variant = _lair.claim_nearest_prop_tile(start_position)
+		if term_pos == null:
+			term_pos = _lair.nearest_interior_tile(start_position, [scrapbot_pos])
+		var terminal := SystemTerminal.new()
+		add_child(terminal)
+		terminal.global_position = term_pos
+		lighting.add_lamp(term_pos, 110.0, 1.0, Color(0.6, 0.85, 1.0))
 
 	var selection := SelectionManager.new()
 	selection.name = "SelectionManager"
@@ -105,17 +118,19 @@ func _ready() -> void:
 	hud.setup(player, build_manager, generator)
 	build_manager.message.connect(hud.log_message)
 
+	# Harvest mode: park the bot in a room and [E] to pour the colony out to strip it (they haul
+	# scrap back to the bot's arm), [E] again to recall. The siege/defenses come in later slices.
+	var harvest := HarvestMode.new()
+	harvest.name = "HarvestMode"
+	harvest.bot = player
+	harvest.hud = hud
+	harvest.generator = generator
+	add_child(harvest)
+
 	if OS.has_environment("GROBIT_DEBUG_ENEMIES"):
 		_debug_spawn_enemies()
 	if OS.has_environment("GROBIT_DEBUG_LOOT"):
 		_debug_spawn_loot()
-	# Env-gated: unlock shipping + seed factory items + open the cartridge loader.
-	if OS.has_environment("GROBIT_OPEN_SHIP") and RunState.factory != null:
-		RunState.unlock_shipping()
-		RunState.factory.set_cell(Vector2i(2, 0), {"kind": "resource", "id": "copper"})
-		RunState.factory.set_cell(Vector2i(3, 0), {"kind": "resource", "id": "charge_cells"})
-		RunState.factory.set_cell(Vector2i(2, 1), {"kind": "resource", "id": "power_coupling"})
-		hud.open_cartridge.call_deferred()
 
 	# Report which artwork is still using placeholders (all icons now requested).
 	ContentLibrary.print_missing_report.call_deferred()
@@ -155,81 +170,76 @@ func _debug_spawn_loot() -> void:
 	station.global_position = station_position
 
 
-## Guarantees the factory has a Scrapper Arm (the harvest destination). Runs every launch so
-## older saves without one get migrated; a no-op once an arm is present.
-func _ensure_scrapper_arm() -> void:
-	var f := RunState.factory
-	if f == null:
-		return
-	for m: Dictionary in f.machines:
-		if String(m.get("def_id", "")) == "scrapper_arm" and not bool(m.get("removed", false)):
-			return
-	var core := Vector2i(1, 1)  # a 5-cell bar: core + copper/steel/plastic/ceramic slots to the right
-	if f.can_place("scrapper_arm", core):
-		f.place_scrapper_arm(core)
-
-
-## First-run bootstrap. You start at the bottom of the tech ladder: arm level 1 (steel only),
-## with one Steel Recycler seeded, its input against the arm's steel slot — so harvested steel
-## scrap flows straight in and the economy can start. Later tiers (copper → plastic → ceramic)
-## unlock by leveling the arm. Only runs when there's no saved factory yet.
+## First-run bootstrap. You start at the bottom of the tech ladder: every goblin carries the
+## tier-1 (steel) tool, and one Steel Recycler is seeded so harvested steel scrap can be refined
+## from the first run. Higher tiers come from better tools found in the field. Only runs when
+## there's no saved factory yet.
 func _seed_starter_factory() -> void:
 	var f := RunState.factory
 	if f == null:
 		return
-	var core := Vector2i(3, 2)  # input at (2,2) sits directly below the steel slot at (2,1)
+	var core := Vector2i(3, 2)
 	if f.machine_at(core) < 0 and f.can_place("steel_recycler", core):
 		f.place_machine("steel_recycler", core)
 
 
-func _spawn_objective() -> void:
-	if generator.objective_room == null:
-		return
-	var position: Variant = generator.claim_prop_tile(generator.objective_room.center(), generator.objective_room)
-	if position == null:
-		push_error("RunController: no safe objective-room tile for Objective Terminal.")
-		return
-	# Slice: a simple objective terminal that unlocks shipping when activated.
-	var terminal := ObjectiveTerminal.new()
-	add_child(terminal)
-	terminal.global_position = position
-	if lighting != null:
-		lighting.add_lamp(terminal.global_position, 120.0, 1.1, Color(1.0, 0.8, 0.6))
-
-
-## The scrapbot was used: in the lair it opens the factory loadout (set up, then Accept to
-## launch); once out in the field it extracts and heads home.
+## The scrapbot was used: in the lair it opens the SCRAPBOT window (bay / hold / crew squad, and
+## [Enter] launches the run); once out in the field it extracts and heads home.
 func on_scrapbot_interact() -> void:
 	if RunState.driving:
 		_extract()  # already out — haul the whole inventory home, no picking
 	elif hud != null:
-		hud.open_factory()  # set up your loadout; [Enter] Accept drives you out (launch_from_setup)
+		hud.open_scrapbot()  # loadout + squad; [Enter] launches the run (launch_from_setup)
 
 
-## Called by the factory panel's Accept — the loadout is set, commit and drive out.
+## Called by the Scrapbot window's [Enter] — the loadout + squad are set, commit and drive out.
 func launch_from_setup() -> void:
+	RunState.load_ammo()  # load the workshop-made ammo onto the bot for the weapon(s) in the bay
 	_drive_out()
 
 
 ## Extraction is seamless now: whatever is in your factory inventory (loose resources + filled
 ## caches) comes home automatically — no load-the-cartridge selection screen.
+## Base materials (scrap + the refined recycler outputs) stay in the PERSISTENT inventory — the
+## colony hauls them home and spends them in the lair (tool upgrades, repairs). Only finished
+## COMPONENTS (bridge parts + ship components) are delivered on extraction, toward the lair's
+## survival needs + the Mars unlock tallies.
+const _KEPT_IN_INVENTORY := ["steel_scrap", "copper_scrap", "plastic_scrap", "ceramic_scrap",
+	"steel", "copper", "plastic", "ceramic", "tech_data", "food"]
+
+
 func _extract() -> void:
 	var items := {}
 	var f := RunState.factory
+	RunState.return_ammo()  # unspent ammo comes home to the workshop stock for next time
+	# Drain the bot's CARGO HOLD into the persistent base inventory first: hauled scrap feeds the
+	# grid, recovered machines go into per-instance storage (transport parts into fungible stock).
+	if RunState.cargo != null and f != null:
+		var hauled := RunState.cargo.scrap_counts()
+		for sid: String in hauled:
+			RunState.deposit(sid, int(hauled[sid]))
+		for def_id: String in RunState.cargo.machine_list():
+			if def_id.begins_with("__"):
+				RunState.add_to_stock(def_id)
+			else:
+				RunState.add_machine_instance(def_id)
+		RunState.cargo.clear()
 	if f != null:
 		for mi in f.machines.size():
 			var cs := f.cache_state(mi)
-			if not cs.is_empty() and int(cs.count) > 0:
-				var cid := String(cs.id)
-				items[cid] = int(items.get(cid, 0)) + f.take_cache(mi)
+			if not cs.is_empty() and int(cs.count) > 0 and not _KEPT_IN_INVENTORY.has(String(cs.id)):
+				items[String(cs.id)] = int(items.get(String(cs.id), 0)) + f.take_cache(mi)
 		for y in f.rows:
 			for x in f.cols:
 				var pos := Vector2i(x, y)
 				var cell := f.get_cell(pos)
-				if String(cell.get("kind", "")) == "resource":
-					var id := String(cell.id)
-					items[id] = int(items.get(id, 0)) + int(cell.get("count", 1))
-					f.set_cell(pos, {})
+				if String(cell.get("kind", "")) != "resource":
+					continue
+				var id := String(cell.id)
+				if _KEPT_IN_INVENTORY.has(id):
+					continue  # stays in the base inventory (persists)
+				items[id] = int(items.get(id, 0)) + int(cell.get("count", 1))
+				f.set_cell(pos, {})
 	on_cartridge_shipped(items)
 
 
@@ -292,9 +302,12 @@ func _end_run(result: String) -> void:
 	if _run_over:
 		return
 	_run_over = true
-	# The factory layout you built persists to the next run (extraction or death alike).
-	# (A future big-machine extraction will clear it instead.)
-	MetaState.save_factory(RunState.factory)
+	# AUTO-SAVE ON RETURN only (extract / ship / rescue). A LOST run — the bot was destroyed — does NOT
+	# save: reloading reverts to your last return, so you forfeit the run's haul + built layout. (Goblin
+	# permadeath is saved when it happens, so it stays permanent.) See DESIGN_SPEC §0.2 / roadmap 2.2.
+	if result != RunState.RESULT_LOST:
+		MetaState.save_factory(RunState.factory)
+		MetaState.save_bay(RunState.bay)
 	if player != null:
 		player.set_input_locked(true)
 	var summary := RunState.end_run(result)
@@ -307,17 +320,17 @@ func restart_run() -> void:
 	get_tree().reload_current_scene()
 
 
-## DEBUG (F9): wipe the persistent factory + storage back to a single bare Scrapper Arm, then
-## reload. Useful for testing the loop from a clean slate.
+## DEBUG (F9): wipe the persistent factory + storage back to a bare grid (just the seeded Steel
+## Recycler on the next launch), then reload. Useful for testing the loop from a clean slate.
 func debug_reset_to_arm() -> void:
 	var g := FactoryGrid.new(RunState.FACTORY_COLS, RunState.FACTORY_ROWS)
-	g.place_scrapper_arm(Vector2i(1, 1))
-	MetaState.save_factory(g)            # persist a factory that holds only the arm
+	g.place_machine("steel_recycler", Vector2i(3, 2))
+	MetaState.save_factory(g)            # persist a bare factory with one recycler
 	MetaState.machine_storage.clear()    # empty the lair storage (transport/caches)
 	MetaState.machine_instances.clear()  # and the stored machine instances
 	MetaState.lair_needs.clear()         # reset the lair's survival needs + beacon
 	MetaState.beacon_sent = false
 	MetaState.save_game()
 	if hud != null:
-		hud.log_message("DEBUG: factory + storage reset to a bare Scrapper Arm.")
+		hud.log_message("DEBUG: factory + storage reset to a bare grid.")
 	restart_run()

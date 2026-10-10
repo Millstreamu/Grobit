@@ -1,32 +1,30 @@
 extends Node
-## Typed scrap economy: a material's scrap pile yields that material's scrap into the Scrapper
-## Arm, an adjacent recycler pulls it out and turns it into the base material, and a mismatched
-## recycler won't touch it.
+## Typed scrap economy: a material's scrap pile feeds that material's scrap into the inventory grid
+## (or a matching scrap inserter), an adjacent recycler pulls it out and turns it into the base
+## material, and a mismatched recycler won't touch it.
 
 var fail := 0
 
 
 func _ready() -> void:
-	# A steel scrap pile harvests steel_scrap into the Scrapper Arm's steel slot (tier 1, the
-	# starting tier that's unlocked at arm level 1).
-	MetaState.machine_levels = {}  # arm level 1
+	# A steel scrap pile feeds steel_scrap into the grid (top-left).
+	MetaState.machine_levels = {}
 	RunState.begin_run(GameData.first_area_id(), 7)
-	RunState.factory.place_scrapper_arm(Vector2i(0, 0))
 	var pile := ScrapNode.new()
 	pile.generate({"label": "steel scrap", "tokens_min": 3, "tokens_max": 3,
 		"pool": [{"id": "steel_scrap", "weight": 1}]})
 	add_child(pile)
-	pile.hold_interact(ScrapNode.HARVEST_SECONDS + 0.1)
-	_ck(RunState.factory.arm_slot_count("steel_scrap") >= 1, "steel pile yields steel scrap into the arm slot")
+	RunState.deposit(pile.take_one(), 1)  # a goblin pulls a piece and hauls it in
+	_ck(int(RunState.factory.resource_counts().get("steel_scrap", 0)) >= 1, "steel pile feeds steel scrap into the grid")
 
-	# A recycler whose input touches the arm's steel slot PULLS the scrap straight out.
-	var armg := FactoryGrid.new(8, 5)
-	armg.place_scrapper_arm(Vector2i(0, 0))  # steel slot at (1,0)
-	armg.get_cell(Vector2i(1, 0))["count"] = 3
-	armg.place_machine("steel_recycler", Vector2i(2, 1))  # input (1,1) is below the steel slot
-	for _t in 4: armg.tick(2.5)
-	_ck(int(armg.resource_counts().get("steel", 0)) > 0, "a recycler pulls steel scrap from the adjacent arm slot")
-	_ck(armg.arm_slot_count("steel_scrap") < 3, "the pull drained the arm slot")
+	# A recycler whose input touches a steel scrap INSERTER PULLS the scrap straight out.
+	var ins := FactoryGrid.new(8, 5)
+	ins.place_inserter(Vector2i(1, 0), "steel_scrap")
+	ins.get_cell(Vector2i(1, 0))["count"] = 3
+	ins.place_machine("steel_recycler", Vector2i(2, 1))  # input (1,1) is below the inserter
+	for _t in 4: ins.tick(2.5)
+	_ck(int(ins.resource_counts().get("steel", 0)) > 0, "a recycler pulls steel scrap from the adjacent inserter")
+	_ck(ins.inserter_count("steel_scrap") < 3, "the pull drained the inserter")
 
 	# The copper recycler turns copper_scrap into copper.
 	var f := FactoryGrid.new(8, 8)

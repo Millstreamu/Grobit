@@ -19,21 +19,40 @@ const RESULT_SHIPPED := "shipped"
 const RESULT_RESCUED := "rescued"  # the lair was fully restored and the distress beacon sent — win
 const RESULT_LOST := "lost"
 
-## Inventory-factory grid (see docs/INVENTORY_FACTORY_DIRECTION.md). Starts bare each run.
+## Inventory-factory grid (the lair workshop / persistent base inventory). Persists across runs.
 const FACTORY_COLS := 8
 const FACTORY_ROWS := 8
 var factory: FactoryGrid
 
-## The four typed scraps. The Scrapper Arm is a 5-cell GRID MACHINE now (core + one slot per
-## type); harvested scrap stacks into its matching slot (FactoryGrid.deposit_harvest) and an
-## adjacent recycler pulls it out. There is no top bar any more.
-const ARM_SCRAP_TYPES := ["copper_scrap", "steel_scrap", "plastic_scrap", "ceramic_scrap"]
+## The scrapbot's CARGO HOLD — the Dredge-style finite space goblins deposit hauled loot into
+## during a run (scrap packs small, recovered machines are bulky). Empty at run start; drains into
+## the base inventory on extraction (see RunController._extract). See docs/DESIGN_SPEC.md §0.1.
+const CARGO_COLS := 6
+const CARGO_ROWS := 5
+var cargo: CargoHold
 
-## Tech Data is the one run CURRENCY shown on the top bar, not a grid item — it never takes an
-## inventory cell. get_quantity/add/can_afford/spend route it here; every other resource
-## (typed scrap in the arm's slots, refined materials/components in the grid) lives elsewhere.
-## There is no generic 'junk' any more — repairs are paid in refined materials from the grid.
-const BAR_CURRENCIES := ["tech_data"]
+
+## Current cargo-hold row count — base plus any persistent expansion bought at the terminal.
+func cargo_rows() -> int:
+	return CARGO_ROWS + MetaState.cargo_rows_bonus
+
+## The scrapbot's MODULE BAY — the Dredge-style loadout grid you pack at the lair: weapons (which
+## auto-fire in the field, fed ammo) and support modules, as shaped pieces. Persists across runs
+## (MetaState.bay_blob). This is the bot's expedition kit, separate from the lair workshop (factory)
+## and the cargo hold. See docs/DESIGN_SPEC.md §0.1.
+const BAY_COLS := 6
+const BAY_ROWS := 4
+var bay: FactoryGrid
+
+## The four typed scraps. Goblins haul scrap home and it feeds the inventory from the top-left
+## (FactoryGrid.deposit_scrap), or into a scrap inserter pinned to that type; an adjacent recycler
+## pulls it out. What a goblin can scrap is gated by its TOOL's tier, not by the factory.
+const SCRAP_TYPES := ["copper_scrap", "steel_scrap", "plastic_scrap", "ceramic_scrap"]
+
+## Tech Data is now a normal INVENTORY ITEM (scrapping machines yields it into the grid; the
+## System Terminal spends it from the grid for recruiting / upgrades / hold expansion). No top-bar
+## currency any more — BAR_CURRENCIES is empty, so get_quantity/add/spend all route to the grid.
+const BAR_CURRENCIES := []
 var currency: Dictionary = {}
 
 
@@ -58,13 +77,28 @@ var weapon_ammo := ""
 ## of the weapon family — compatibility is NOT guaranteed (by design).
 var run_chain: Dictionary = {}
 
-## Set true when the map objective is completed; the retrieval pad only ships once
-## this is on (see docs/INVENTORY_FACTORY_DIRECTION.md — objective gates shipping).
-var shipping_unlocked := false
-
 ## False while you're still in the lair (goblin on foot); true once you've hopped in the
 ## scrapbot and driven out into the ruins. Drives the scrapbot's prompt (drive out / extract).
 var driving := false
+
+## Goblin names chosen to deploy this run (the pre-run squad, picked in the Scrapbot window's Crew
+## tab). Empty means "deploy the whole colony". Reset each run in begin_run.
+var deploy_squad: Array = []
+
+## The bot's loaded AMMO reserve for this run ({ammo_id: count}). Ammo is MADE in the lair workshop
+## (ammo makers are workshop machines now), stocked in the factory inventory, and loaded onto the bot
+## at launch (load_ammo). The bay weapon draws from here as it fires; leftovers come home on extract.
+var ammo: Dictionary = {}
+
+## HEAT — run-wide presence/detection (docs/DESIGN_SPEC.md §0.2). Never decays in play; it rises while
+## you're seen + engaging enemies (and when opening doors, later). Two staged thresholds escalate the
+## threat: at HEAT_BOT_THREAT bigger, bot-damaging enemies appear; at HEAT_FULL_ALERT the facility is
+## fully alerted (spawners won't stay dead). Resets every run.
+enum { HEAT_CALM, HEAT_BOT_THREAT_TIER, HEAT_FULL_ALERT_TIER }
+const HEAT_MAX := 100.0
+const HEAT_BOT_THREAT := 55.0
+const HEAT_FULL_ALERT := 80.0
+var heat := 0.0
 
 ## Machine names newly unlocked by the shipment that ended this run (for the summary).
 var last_run_unlocks: Array = []
@@ -77,11 +111,6 @@ var needs_delivered: Dictionary = {}
 ## grow `available_abilities` later.
 var equipped_ability := ""
 var available_abilities: Array[String] = []
-
-## Reshuffles left this run for re-rolling a machine's RNG layout (build port roll and
-## level-up slot shape). Defaults to 0 — you live with what you roll — and only meta
-## progression grants more (MetaState "reshuffles" effect). Per-run budget.
-var reshuffles := 0
 
 ## Per-run credit accumulated at the Component Exchange by selling components. Each
 ## full ExchangePanel.MACHINE_COST worth grants a random machine into `machine_stock`.
@@ -116,10 +145,11 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 	run_seed = new_seed
 	result = RESULT_NONE
 	run_active = true
-	shipping_unlocked = true  # extraction is ungated now — just return to the start point
 	driving = false           # you start in the lair as the goblin, not yet in the scrapbot
+	deploy_squad = []         # default to deploying the whole colony until you pick a squad
+	ammo = {}                 # the bot carries no ammo until you load it at launch (load_ammo)
+	heat = 0.0                # presence resets to calm at the start of every run
 	exchange_machines_granted = 0
-	reshuffles = int(MetaState.effect_total("reshuffles", 0.0))
 
 	# Ability is chosen at the start of each run. Only "starter" abilities are
 	# available up front; others are unlocked mid-run (e.g. by repairing equipment).
@@ -130,12 +160,13 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 			available_abilities.append(ability_id)
 
 	# Inventory-factory: a bare grid each run (the persistent layout is loaded over it by the
-	# RunController). Harvested scrap stacks into the Scrapper Arm machine's typed slots, and
-	# adjacent recyclers pull it out — see FactoryGrid.deposit_harvest / _consume_available.
+	# RunController). Harvested scrap feeds the grid from the top-left (or a matching scrap
+	# inserter), and adjacent recyclers pull it out — see FactoryGrid.deposit_scrap.
 	factory = FactoryGrid.new(FACTORY_COLS, FACTORY_ROWS)
+	cargo = CargoHold.new(CARGO_COLS, cargo_rows())  # the bot's hold starts empty each run
+	bay = FactoryGrid.new(BAY_COLS, BAY_ROWS)      # loadout; RunController loads the saved one over this
 
-	# Top-bar currency starts empty (Tech Data comes from scrapping machines, uploaded at a Terminal).
-	currency = {"tech_data": 0}
+	currency = {}  # no top-bar currencies now — Tech Data is a grid item
 
 	# Machine/transport STORAGE persists across runs (Slice C): repaired gear lives in
 	# MetaState.machine_storage and is placed at run-start setup. Link the run's stock to it so
@@ -159,15 +190,128 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 	run_started.emit()
 
 
-func unlock_shipping() -> void:
-	shipping_unlocked = true
+## The goblin names that will actually deploy this run: the chosen squad, filtered to the living
+## colony, or the whole colony when nothing is chosen (never deploys nobody).
+func squad_names() -> Array:
+	var all := MetaState.colony_names()
+	if deploy_squad.is_empty():
+		return all
+	var out: Array = []
+	for who: Variant in all:
+		if deploy_squad.has(who):
+			out.append(who)
+	return out if not out.is_empty() else all
 
 
-## Cost to raise a machine from `level` to `level + 1` (paid from the factory). Tech Data
-## is earned by scrapping machines you can't place (see FactoryPanel scrap), so leveling
-## up is fed by breaking down spare machines.
-func level_cost(level: int) -> Dictionary:
-	return {"tech_data": level + 1}
+## Whether a named goblin is in this run's deploy squad (treating "no squad chosen" as all-in).
+func is_deploying(gob_name: String) -> bool:
+	return deploy_squad.is_empty() or deploy_squad.has(gob_name)
+
+
+## Toggles a goblin in/out of the deploy squad. Turning the last-remaining one off is refused
+## (you always deploy at least one). Called from the Scrapbot window's Crew tab at base.
+func toggle_deploy(gob_name: String) -> void:
+	if deploy_squad.is_empty():
+		# "all" → make the set explicit (everyone) so we can remove this one.
+		for who: Variant in MetaState.colony_names():
+			deploy_squad.append(String(who))
+	if deploy_squad.has(gob_name):
+		if deploy_squad.size() <= 1:
+			return  # keep at least one goblin selected
+		deploy_squad.erase(gob_name)
+	else:
+		deploy_squad.append(gob_name)
+
+
+# ------------------------------------------------------------------- ammo ----
+
+## Ammo packs tighter than loot — this many ammo per hold cell (its own density, below the scrap
+## stack of 10, so ammo scarcity bites sooner). Tune this to make ammo more/less of a constraint.
+const AMMO_PER_CELL := 5
+
+## How much ammo the bot can carry — capped by the CARGO HOLD's size (so upgrading the hold also
+## lets you carry more ammo), at AMMO_PER_CELL per hold cell.
+func ammo_capacity() -> int:
+	var cells := cargo.capacity() if cargo != null else CARGO_COLS * cargo_rows()
+	return cells * AMMO_PER_CELL
+
+
+## Loads the bot's ammo reserve at launch: for every weapon equipped in the bay, pull its ammo type
+## out of the lair workshop inventory onto the bot — up to the hold-size cap (ammo_capacity). Ammo
+## beyond the cap stays in the workshop for next time.
+func load_ammo() -> void:
+	ammo = {}
+	if bay == null or factory == null:
+		return
+	var room := ammo_capacity()
+	for m: Dictionary in bay.machines:
+		if room <= 0:
+			break
+		if bool(m.get("removed", false)):
+			continue
+		var def: Dictionary = GameData.machines.get(String(m.get("def_id", "")), {})
+		if not bool(def.get("weapon", false)):
+			continue
+		var id := String(def.get("ammo", ""))
+		if id == "" or ammo.has(id):
+			continue
+		var take := mini(get_quantity(id), room)
+		if take > 0:
+			add(id, -take)                 # take it out of the workshop stock
+			ammo[id] = take
+			room -= take
+
+
+func ammo_count(id: String) -> int:
+	return int(ammo.get(id, 0))
+
+
+## Spends one unit of the given ammo from the bot's reserve. Returns false (no shot) when empty.
+func consume_ammo(id: String) -> bool:
+	var n := int(ammo.get(id, 0))
+	if n <= 0:
+		return false
+	ammo[id] = n - 1
+	return true
+
+
+## True if a weapon is equipped AND the bot still has ammo of its type loaded — i.e. it can fire.
+func weapon_armed() -> bool:
+	if bay == null or not bay.has_weapon():
+		return false
+	var stats := bay.weapon_stats()
+	return ammo_count(String(stats.get("ammo", ""))) > 0
+
+
+## Returns any unspent ammo to the workshop inventory (called on a successful extraction).
+func return_ammo() -> void:
+	if factory == null:
+		return
+	for id: String in ammo:
+		var n := int(ammo[id])
+		if n > 0:
+			add(id, n)
+	ammo = {}
+
+
+# ------------------------------------------------------------------- heat ----
+
+## Raises (or, for the later Reduce-Heat ability, lowers) the run-wide Heat, clamped to [0, HEAT_MAX].
+func add_heat(amount: float) -> void:
+	heat = clampf(heat + amount, 0.0, HEAT_MAX)
+
+
+func heat_ratio() -> float:
+	return heat / HEAT_MAX
+
+
+## The current Heat tier: HEAT_CALM / HEAT_BOT_THREAT_TIER / HEAT_FULL_ALERT_TIER.
+func heat_tier() -> int:
+	if heat >= HEAT_FULL_ALERT:
+		return HEAT_FULL_ALERT_TIER
+	if heat >= HEAT_BOT_THREAT:
+		return HEAT_BOT_THREAT_TIER
+	return HEAT_CALM
 
 
 ## Resource cost to place a machine or transport part (paid from the factory). Transport and
@@ -316,16 +460,16 @@ func add(resource_id: String, amount := 1) -> int:
 	return 0
 
 
-## Deposits a harvested/dropped item into its home: the four typed scraps stack into the Scrapper
-## Arm machine's matching slot, Tech Data on the top bar, everything else into the factory grid.
-## Returns amount accepted (0 if the arm is full/absent, etc.).
+## Deposits a harvested/dropped item into its home: the four typed scraps feed the inventory from
+## the top-left (or into a matching scrap inserter), Tech Data on the top bar, everything else into
+## the factory grid. Returns amount accepted (0 if the grid is full).
 func deposit(id: String, amount := 1) -> int:
-	if ARM_SCRAP_TYPES.has(id):
+	if SCRAP_TYPES.has(id):
 		if factory == null:
 			return 0
 		var placed := 0
 		for _i in amount:
-			if factory.deposit_harvest(id):
+			if factory.deposit_scrap(id):
 				placed += 1
 			else:
 				break

@@ -16,14 +16,17 @@ var _status: Label
 var _hp_fill: ColorRect
 var _hp_label: Label
 var _prompt: Label
+var _siege: Label
+var _heat: Label
+var _cargo: Label
 var _messages: Array = []
 
 var _minimap: Minimap
 var _factory: FactoryPanel
-var _cartridge: CartridgePanel
-var _decode: DecodePanel
+var _scrapbot: ScrapbotPanel
 var _exchange: ExchangePanel
-var _terminal: TerminalPanel
+var _terminal: LairPanel
+var _hack: HackPanel
 var _fabricator: FabricatorPanel
 var _found: FoundMachinePanel
 var _run_info: RunInfoPanel
@@ -90,10 +93,13 @@ func _process(_delta: float) -> void:
 	if _status.visible:
 		_status.text = _status_text()
 	_prompt.text = _interaction_prompt()
+	_update_siege()
+	_update_heat()
+	_update_cargo()
 	if _summary_panel.visible:
 		_summary_label.text = _summary_text()
 	if _minimap != null:
-		_minimap.visible = not (_factory.is_open() or _cartridge.is_open() or _decode.is_open() or _exchange.is_open() or _terminal.is_open() or _fabricator.is_open() or _found.is_open() or _run_info.is_open() or _ability_choice.is_open())
+		_minimap.visible = not (_factory.is_open() or _scrapbot.is_open() or _exchange.is_open() or _terminal.is_open() or _fabricator.is_open() or _found.is_open() or _run_info.is_open() or _ability_choice.is_open() or _hack.is_open())
 	_handle_toggles()
 
 
@@ -104,22 +110,22 @@ func open_ability_choice() -> void:
 
 
 
-## Opens the retrieval-cartridge loader (called by RetrievalPad.interact()).
-func open_cartridge() -> void:
-	if _cartridge != null:
-		_cartridge.open()
-
-
 ## Opens the factory loadout for run setup (called by the scrapbot in the lair).
 func open_factory() -> void:
 	if _factory != null and not _factory.is_open():
 		_factory.open()
 
 
-## Opens the module decode draft (called by DecodeStation.interact()).
-func open_decode(cost: Dictionary) -> void:
-	if _decode != null:
-		_decode.open(cost)
+## Opens the scrapbot window (bay / hold / crew / tasks). Called by [I] and by boarding the bot.
+func open_scrapbot() -> void:
+	if _scrapbot != null and not _scrapbot.is_open():
+		_scrapbot.open()
+
+
+## Opens the door-hack minigame for `door` (called by a field Door's interact()).
+func open_hack(door: Node) -> void:
+	if _hack != null and not _hack.is_open():
+		_hack.open(door)
 
 
 ## Opens the component exchange (called by ComponentExchange.interact()).
@@ -160,12 +166,10 @@ func log_message(text: String) -> void:
 # --------------------------------------------------------------- input ----
 
 func _handle_toggles() -> void:
+	if _hack.is_open():
+		return  # the door-hack minigame owns input while open
 	if _ability_choice.is_open():
 		return  # run-start ability choice owns input until confirmed
-	if _cartridge.is_open():
-		return  # the cartridge loader owns input while open
-	if _decode.is_open():
-		return  # the decode draft owns input while open
 	if _exchange.is_open():
 		return  # the component exchange owns input while open
 	if _terminal.is_open():
@@ -176,6 +180,8 @@ func _handle_toggles() -> void:
 		return  # the machine-found card owns input while open
 	if _run_info.is_open():
 		return  # the debug run-info panel owns input while open
+	if _scrapbot.is_open():
+		return  # the scrapbot window owns input while open (it closes itself on [I]/[Esc])
 	if Input.is_action_just_pressed("run_info"):
 		_run_info.open()
 		return
@@ -190,13 +196,14 @@ func _handle_toggles() -> void:
 				_try_unlock_tech(i)
 		return
 
-	# The factory panel is a full-screen modal that owns input while open.
+	# The factory panel (lair WORKSHOP) is a full-screen modal opened from the scrapbot bench.
 	if _factory.is_open():
 		if Input.is_action_just_pressed("toggle_inventory"):
 			_factory.try_close()  # refused while machines are still in storage
 		return
+	# [I] opens the SCRAPBOT window (bay / hold / abilities / crew / tasks).
 	if Input.is_action_just_pressed("toggle_inventory"):
-		_factory.open()
+		_scrapbot.open()
 		return
 
 
@@ -227,11 +234,12 @@ func _status_text() -> String:
 	lines.append("Weapon:  " + _weapon_text())
 	lines.append("Goal:  " + _goal_text())
 	var _f := RunState.factory
-	var _ac := func(id: String) -> int: return _f.arm_slot_count(id) if _f != null else 0
-	lines.append("Arm scrap — Cu %d  St %d  Pl %d  Ce %d    Tech Data: %d" % [_ac.call("copper_scrap"), _ac.call("steel_scrap"), _ac.call("plastic_scrap"), _ac.call("ceramic_scrap"), RunState.currency_count("tech_data")])
+	var _counts := _f.resource_counts() if _f != null else {}
+	var _rc := func(id: String) -> int: return int(_counts.get(id, 0)) + (_f.inserter_count(id) if _f != null else 0)
+	lines.append("Scrap — Cu %d  St %d  Pl %d  Ce %d    Tech Data: %d" % [_rc.call("copper_scrap"), _rc.call("steel_scrap"), _rc.call("plastic_scrap"), _rc.call("ceramic_scrap"), _rc.call("tech_data")])
 	lines.append("Resources: " + _resource_line())
 	lines.append("Lair: " + _lair_needs_line())
-	lines.append("Shooting is automatic.   [Space] use ability   [Tab] switch target   [F] interact")
+	lines.append("[Space] shoot (auto-aim)   [Tab] switch target   [F] interact")
 	lines.append("[I] factory (place/combine/scrap machines)   [F] interact/scrap   [P] run info")
 	for msg: Dictionary in _messages:
 		lines.append("> " + String(msg.text))
@@ -299,13 +307,14 @@ func _tip_text() -> String:
 	var has_scrap := false
 	var f := RunState.factory
 	if f != null:
-		for t: String in RunState.ARM_SCRAP_TYPES:
-			if f.arm_slot_count(t) > 0:
+		var counts := f.resource_counts()
+		for t: String in RunState.SCRAP_TYPES:
+			if int(counts.get(t, 0)) + f.inserter_count(t) > 0:
 				has_scrap = true
 				break
 	if not has_scrap:
-		return "hold [F] on a scrap pile to salvage scrap into your Scrapper Arm"
-	return "open the factory [I]: [B] a Scrap Insert to tap the arm, build recyclers/ammo makers + a weapon, then return to the start [F] to extract"
+		return "park the bot in a room and press [E] to deploy goblins — they strip scrap their tool can handle"
+	return "open the factory [I]: place a scrap inserter to route a scrap type to a recycler, build recyclers/ammo makers + a weapon, then return to the start [F] to extract"
 
 
 func _resource_line() -> String:
@@ -322,6 +331,72 @@ func _interaction_prompt() -> String:
 		_player, get_tree().get_nodes_in_group("interactables")
 	)
 	return best.interaction_prompt() if best != null else ""
+
+
+## Siege pressure readout — alarm meter while the colony harvests, breach warning once the doors
+## give, plus deployed/incoming counts so the player can judge when to recall. Hidden otherwise.
+func _update_siege() -> void:
+	var mode: Node = get_tree().get_first_node_in_group("harvest_mode")
+	if mode == null or not bool(mode.active):
+		_siege.visible = false
+		return
+	_siege.visible = true
+	var out: int = mode.deployed_count()
+	# Does the bot have a weapon AND loaded ammo to man the auto-turrets? The fight-or-flee tell.
+	var armed: bool = RunState.weapon_armed()
+	var defense := "turrets ACTIVE" if armed else ("OUT OF AMMO — flee" if RunState.bay != null and RunState.bay.has_weapon() else "NO WEAPON — flee")
+	if bool(mode.recalling):
+		_siege.modulate = Color(0.6, 1, 0.7)
+		_siege.text = "RECALLING — get to the bot and drive  ·  goblins out: %d" % out
+		return
+	if mode.is_breached():
+		_siege.modulate = Color(1, 0.45, 0.4)
+		_siege.text = "⚠ BREACHED — enemies: %d  ·  goblins out: %d  ·  %s  ·  [E] RECALL" % [mode.enemy_count(), out, defense]
+		return
+	var filled: int = int(round(mode.alarm_ratio() * 10.0))
+	var meter := "▮".repeat(filled) + "▯".repeat(10 - filled)
+	_siege.modulate = Color(1, 0.9, 0.55)
+	_siege.text = "ALARM %s  ·  goblins out: %d  ·  %s  ·  [E] recall" % [meter, out, defense]
+
+
+## Heat readout (shown while driving): the run-wide presence meter + what tier of threat it's brought.
+func _update_heat() -> void:
+	if _heat == null:
+		return
+	if not RunState.driving:
+		_heat.visible = false
+		return
+	_heat.visible = true
+	var filled: int = int(round(RunState.heat_ratio() * 12.0))
+	var meter := "▮".repeat(filled) + "▯".repeat(12 - filled)
+	var pct := int(round(RunState.heat_ratio() * 100.0))
+	match RunState.heat_tier():
+		RunState.HEAT_FULL_ALERT_TIER:
+			_heat.modulate = Color(1, 0.4, 0.35)
+			_heat.text = "HEAT %s %d%%  ·  FULL ALERT — get out!" % [meter, pct]
+		RunState.HEAT_BOT_THREAT_TIER:
+			_heat.modulate = Color(1, 0.7, 0.3)
+			_heat.text = "HEAT %s %d%%  ·  bot-killers inbound" % [meter, pct]
+		_:
+			_heat.modulate = Color(0.7, 0.85, 0.75)
+			_heat.text = "HEAT %s %d%%" % [meter, pct]
+
+
+## Cargo-hold readout (shown out on a run): how full the bot's hold is, with a FULL warning.
+func _update_cargo() -> void:
+	var hold: CargoHold = RunState.cargo
+	if hold == null or not RunState.driving:
+		_cargo.visible = false
+		return
+	_cargo.visible = true
+	var used := hold.used()
+	var cap := hold.capacity()
+	if hold.is_full():
+		_cargo.modulate = Color(1, 0.45, 0.4)
+		_cargo.text = "HOLD FULL %d/%d — extract to unload" % [used, cap]
+	else:
+		_cargo.modulate = Color(0.75, 0.85, 0.95) if hold.fullness() < 0.8 else Color(1, 0.85, 0.5)
+		_cargo.text = "Hold %d/%d" % [used, cap]
 
 
 ## One-line lair-needs readout: "O2 2/5  Pwr 5/5  Wtr 0/5  Food 1/5" (or RESTORED).
@@ -364,7 +439,7 @@ func _summary_text() -> String:
 		if qty > 0:
 			lines.append("  %s: %d" % [GameData.resource_name(id), qty])
 	lines.append("")
-	lines.append("Banked Tech Data: %d" % MetaState.tech_data)
+	lines.append("Tech Data: %d" % RunState.get_quantity("tech_data"))
 	var locked := _locked_tech_ids()
 	if locked.is_empty():
 		lines.append("All technologies unlocked.")
@@ -417,27 +492,44 @@ func _build_ui() -> void:
 	_prompt.modulate = Color(1, 0.95, 0.6)
 	_add_control(_prompt)
 
+	# Siege readout — centred near the top, only shown while the colony is deployed.
+	_siege = _make_label(Vector2(0, 60), 1152)
+	_siege.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_siege.visible = false
+	_add_control(_siege)
+
+	# Heat (run-wide presence) readout — top-centre, shown while out on a run.
+	_heat = _make_label(Vector2(0, 40), 1152)
+	_heat.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_heat.visible = false
+	_add_control(_heat)
+
+	# Cargo-hold readout — top-right, shown while out on a run.
+	_cargo = _make_label(Vector2(0, 80), 1138)
+	_cargo.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_cargo.visible = false
+	_add_control(_cargo)
+
 	# Inventory-factory grid — opened with [I].
 	_factory = FactoryPanel.new()
 	add_child(_factory)
 
-	# Real-time scrapping minigame overlay (opened by interacting with a scrap node).
+	# The scrapbot window ([I]) — bay / hold / abilities / crew / tasks.
+	_scrapbot = ScrapbotPanel.new()
+	add_child(_scrapbot)
 
-	# Retrieval-cartridge loader (opened from the retrieval pad once shipping is on).
-	_cartridge = CartridgePanel.new()
-	add_child(_cartridge)
-
-	# Module decode draft (opened from a decode station).
-	_decode = DecodePanel.new()
-	add_child(_decode)
 
 	# Component exchange (opened from the start-room Component Exchange station).
 	_exchange = ExchangePanel.new()
 	add_child(_exchange)
 
 	# System terminal (opened from a System Terminal — upload tech data, buy upgrades).
-	_terminal = TerminalPanel.new()
+	_terminal = LairPanel.new()
 	add_child(_terminal)
+
+	# Door-hack minigame (opened by a field Door's interact()).
+	_hack = HackPanel.new()
+	add_child(_hack)
 
 	# Fabricator crafting menu (opened from a Fabricator station).
 	_fabricator = FabricatorPanel.new()

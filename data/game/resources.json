@@ -1,15 +1,15 @@
 {
   "_comment": "Salvage economy (see docs Machines/Scrapables/Resources reference). TYPED SCRAP (copper_scrap/…) is harvested from piles into the Scrapper Arm; MATERIALS (copper/steel/plastic/ceramic) come from recyclers processing that scrap and are the repair currency; PROCESSED/COMPONENTS are deeper craft outputs and ship targets. (There is no generic 'junk' any more — everything is typed.)",
   "resources": {
-    "copper": { "name": "Copper", "icon": "copper", "color": "c8722e" },
-    "steel": { "name": "Steel", "icon": "steel", "color": "b9c2cc" },
-    "plastic": { "name": "Plastic", "icon": "plastic", "color": "3fb6a8" },
-    "ceramic": { "name": "Ceramic", "icon": "ceramic", "color": "e0d7c0" },
+    "copper": { "name": "Copper", "icon": "copper", "color": "c8722e", "stack": 50 },
+    "steel": { "name": "Steel", "icon": "steel", "color": "b9c2cc", "stack": 50 },
+    "plastic": { "name": "Plastic", "icon": "plastic", "color": "3fb6a8", "stack": 50 },
+    "ceramic": { "name": "Ceramic", "icon": "ceramic", "color": "e0d7c0", "stack": 50 },
 
-    "copper_scrap": { "name": "Copper Scrap", "icon": "scrap_copper", "color": "b0632a" },
-    "steel_scrap": { "name": "Steel Scrap", "icon": "scrap_steel", "color": "8f98a3" },
-    "plastic_scrap": { "name": "Plastic Scrap", "icon": "scrap_plastic", "color": "359186" },
-    "ceramic_scrap": { "name": "Ceramic Scrap", "icon": "scrap_ceramic", "color": "c4bba2" },
+    "copper_scrap": { "name": "Copper Scrap", "icon": "scrap_copper", "color": "b0632a", "stack": 50 },
+    "steel_scrap": { "name": "Steel Scrap", "icon": "scrap_steel", "color": "8f98a3", "stack": 50 },
+    "plastic_scrap": { "name": "Plastic Scrap", "icon": "scrap_plastic", "color": "359186", "stack": 50 },
+    "ceramic_scrap": { "name": "Ceramic Scrap", "icon": "scrap_ceramic", "color": "c4bba2", "stack": 50 },
 
     "charge_cells": { "name": "Charge Cells", "icon": "charge_cells", "color": "e8a13a", "stack": 16 },
     "steel_slugs": { "name": "Steel Slugs", "icon": "steel_slugs", "color": "cfd6dd", "stack": 16 },
@@ -44,6 +44,7 @@
     "structural_frame": { "name": "Structural Frame", "icon": "structural_frame", "color": "9aa2ab" },
     "control_unit": { "name": "Control Unit", "icon": "control_unit", "color": "cfd2d6" },
 
-    "tech_data": { "name": "Tech Data", "icon": "tech_data", "color": "5aa9e6" }
+    "tech_data": { "name": "Tech Data", "icon": "tech_data", "color": "5aa9e6", "stack": 99 },
+    "food": { "name": "Food", "icon": "food", "color": "7ec850", "stack": 99 }
   }
 }

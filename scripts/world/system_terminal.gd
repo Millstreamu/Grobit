@@ -1,8 +1,8 @@
 class_name SystemTerminal
 extends InteractableObject
-## A link back to the goblin base, found out in the map. Interact (F) to UPLOAD the Tech
-## Data you earned this run (so it banks permanently) and to SPEND banked Tech Data on
-## permanent machine upgrades. Tech Data you never upload is lost when the run ends.
+## A link back to the goblin base, found out in the map. Interact (F) to open the LAIR WINDOW —
+## three tabs: the Production workshop floor, the Goblins roster (recruit / tools / memorial), and
+## Tasks (colony quests, permanent upgrades & tech, and the lair-restoration goal).
 
 func _configure() -> void:
 	add_to_group("system_terminals")
@@ -17,7 +17,7 @@ func can_interact() -> bool:
 
 
 func interaction_prompt() -> String:
-	return "[F] System Terminal — upload Tech Data & upgrade machines"
+	return "[F] System Terminal — workshop, goblins & tasks"
 
 
 func interact() -> void:

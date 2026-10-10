@@ -1,8 +1,9 @@
 class_name GrobitAbilities
 extends Node
-## One equipped active ability, chosen at the start of the run and triggered with
-## Space. Behaviour + balance come from data (data/game/abilities.json). Shooting
-## is now automatic (see PlayerCombat), so Space is free for the ability.
+## Legacy field ability. [Space] now FIRES THE WEAPON (see PlayerCombat), so field abilities no longer
+## have a key trigger — they are being retired in favour of tactical abilities granted by bay modules
+## and used from the Scrapbot menu (docs/DESIGN_SPEC.md §0.2, roadmap Phase 5). `use()` is kept so
+## anything calling it programmatically (e.g. a reward) still works; there is just no input binding.
 
 signal ability_used(ability_id: String)
 
@@ -12,11 +13,7 @@ var _cooldown := 0.0
 
 
 func _process(delta: float) -> void:
-	_cooldown = maxf(_cooldown - delta, 0.0)
-	if _ability_id.is_empty() or not _can_act():
-		return
-	if Input.is_action_just_pressed("attack"):
-		use()
+	_cooldown = maxf(_cooldown - delta, 0.0)  # no input trigger: [Space] shoots now
 
 
 ## Equip an ability by id (from the run-start choice, or a future mid-run switch).

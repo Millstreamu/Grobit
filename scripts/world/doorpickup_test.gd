@@ -9,7 +9,7 @@ func _ready() -> void:
 	var player := Node2D.new(); player.add_to_group("player"); add_child(player); player.global_position = Vector2.ZERO
 	var sm := SelectionManager.new(); add_child(sm)
 	var door := Door.new(); add_child(door); door.global_position = Vector2(6, 0)   # closer
-	var pick := MachinePickup.new(); pick.machine_id = "smelter"; add_child(pick); pick.global_position = Vector2(20, 0)
+	var pick := ToolPickup.new(); add_child(pick); pick.global_position = Vector2(20, 0)  # a player-grabbable tool
 	await get_tree().process_frame
 	pick._in_range = true  # simulate the player overlapping the pickup
 	ck(door.can_interact(), "door is in range")

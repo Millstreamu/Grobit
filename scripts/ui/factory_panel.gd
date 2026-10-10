@@ -34,7 +34,7 @@ var _font: Font
 var _radial_mode := false
 var _radial_index := 0
 var _radial_cell := Vector2i.ZERO
-const RADIAL_PARTS := ["__conveyor", "__splitter", "__filter", "storage_cache"]
+const RADIAL_PARTS := ["__inserter", "__conveyor", "__splitter", "__filter", "storage_cache"]
 
 ## Combine groups: two machines of the SAME group merge into a DIFFERENT member of that
 ## group (never one of the two you used). Only these types can be combined with [C].
@@ -48,9 +48,17 @@ const COMBINE_GROUPS := {
 # Place flow: a part is "in your hand" and positioned on the grid. Machines arrive here
 # from stock (found/exchange/combine) and are dropped [Space] or scrapped [R]; transport
 # arrives from the radial.
+## Which grid this panel is editing: the lair WORKSHOP (RunState.factory) or the bot's MODULE BAY
+## (RunState.bay). [Tab] toggles. All grid ops go through _grid().
+var _editing_bay := false
+## Embedded mode: this panel is hosted inside the lair window (LairPanel's Production tab), which
+## owns the dark background, the header + tab strip, pausing the world, and the [Tab]/[Esc] keys.
+## When embedded we trim our own chrome and never pause, close, switch bay, or launch on our own.
+var embedded := false
 var _place_mode := false
 var _place_id := ""
 var _place_dir := Vector2i(1, 0)
+var _place_scrap := "steel_scrap"   # scrap type a __inserter is being placed with ([R] cycles it)
 ## The port layout rolled for the machine currently being built (offsets relative to
 ## the core). Building is a spatial roll like leveling — each build's in/out cells land
 ## somewhere random around the core; [R] rerolls (spends a reshuffle). `_place_flash`
@@ -81,10 +89,6 @@ var _conv_cell: Dictionary = {}
 var _conv_from := Vector2i.ZERO
 
 # Module install sub-mode.
-var _install_mode := false
-var _install_slot := Vector2i.ZERO
-var _install_opts: Array = []
-var _install_index := 0
 
 ## Combine: press [C] on a machine core to mark it, then [C] on a second core to merge
 ## both into one random machine (which drops into your hand to place). (-1,-1) = nothing
@@ -119,7 +123,7 @@ func _ready() -> void:
 
 
 func _debug_open() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	if f != null:
 		f.set_cell(Vector2i(1, 0), {"kind": "resource", "id": "scrap_metal"})
 		f.set_cell(Vector2i(3, 3), {"kind": "resource", "id": "metal_bar"})
@@ -141,6 +145,25 @@ func is_open() -> bool:
 	return visible
 
 
+## True when no sub-mode is active — i.e. [Tab]/[Esc] should fall through to the host window
+## (switch tab / close) rather than being consumed here. Used by LairPanel in embedded mode.
+func at_top_level() -> bool:
+	return not (_place_mode or _move_mode or _move_conv or _radial_mode or _storage_mode) \
+		and _combine_a_core == Vector2i(-1, -1)
+
+
+## Host-driven per-frame update for embedded mode (LairPanel calls this instead of letting our
+## own _process run). Refreshes the pop snapshot so re-showing the tab doesn't pop every item.
+func embedded_tick(delta: float) -> void:
+	_tick(delta)
+
+
+func embedded_refresh() -> void:
+	_prev_res = _res_snapshot()
+	_pops.clear()
+	queue_redraw()
+
+
 ## Opens the inventory and begins placing a freshly-acquired machine (rolls it an instance).
 func open_place(id: String) -> void:
 	open()
@@ -156,7 +179,8 @@ func open() -> void:
 	_message = ""
 	_pops.clear()
 	_prev_res = _res_snapshot()  # so already-present items don't all pop on open
-	get_tree().paused = true
+	if not embedded:
+		get_tree().paused = true  # embedded: the host window owns pausing
 	if _editable() and _has_unplaced():
 		_message = "%d machine(s) in storage — [G] to place them (or leave them for a later run)." % _stock_total()
 	queue_redraw()
@@ -177,7 +201,7 @@ func _has_unplaced() -> bool:
 ## rolled layout (no re-roll — that's what makes duplicates distinct). The instance stays in
 ## storage until actually dropped, so cancelling just leaves it there. Idle-only.
 func _begin_place_instance(index: int) -> bool:
-	if _place_mode or _move_mode or _move_conv or _install_mode or _radial_mode or _storage_mode:
+	if _place_mode or _move_mode or _move_conv or _radial_mode or _storage_mode:
 		return false
 	if index < 0 or index >= RunState.machine_instances.size():
 		return false
@@ -217,12 +241,13 @@ func close() -> void:
 	visible = false
 	_reset_modes()
 	_return_carried()  # don't pocket-vanish a held stack on close
-	get_tree().paused = false
+	if not embedded:
+		get_tree().paused = false
 
 
 ## Puts any carried stack back into the factory grid (free cells).
 func _return_carried() -> void:
-	if not _carried.is_empty() and RunState.factory != null:
+	if not _carried.is_empty() and _grid() != null:
 		RunState.add(String(_carried.get("id", "")), int(_carried.get("count", 1)))
 	_carried = {}
 
@@ -234,13 +259,16 @@ func _reset_modes() -> void:
 	_place_mode = false
 	_move_mode = false
 	_move_conv = false
-	_install_mode = false
 	_place_instance_index = -1
 
 
 func _process(delta: float) -> void:
-	if not visible:
-		return
+	if not visible or embedded:
+		return  # embedded: the host (LairPanel) drives us via embedded_tick
+	_tick(delta)
+
+
+func _tick(delta: float) -> void:
 	if _place_flash > 0.0:
 		_place_flash = maxf(_place_flash - delta, 0.0)
 	_update_pops(delta)
@@ -253,7 +281,7 @@ func _process(delta: float) -> void:
 ## Snapshot of every resource cell (pos -> id) — used to spot newly-produced items.
 func _res_snapshot() -> Dictionary:
 	var out := {}
-	var f := RunState.factory
+	var f := _grid()
 	if f == null:
 		return out
 	for y in f.rows:
@@ -267,7 +295,7 @@ func _res_snapshot() -> Dictionary:
 ## Advances out-slide pops and spawns a new one wherever an item just appeared (from a
 ## machine's output cell it slides out of that machine's core; elsewhere it just pops).
 func _update_pops(delta: float) -> void:
-	var f := RunState.factory
+	var f := _grid()
 	if f == null:
 		return
 	var kept: Array = []
@@ -310,6 +338,11 @@ func _editable() -> bool:
 	return not RunState.driving
 
 
+## The grid currently being edited — the lair workshop or the bot's module bay.
+func _grid() -> FactoryGrid:
+	return RunState.bay if _editing_bay else RunState.factory
+
+
 func _handle_input() -> void:
 	if not _editable():
 		# Field: the factory LAYOUT is locked (no building, combining, or lifting machines), but
@@ -318,15 +351,9 @@ func _handle_input() -> void:
 			close()
 			return
 		_move_cursor()
-		if Input.is_action_just_pressed("attack") and RunState.factory != null \
-				and String(RunState.factory.get_cell(_cursor).get("kind", "")) != "machine_slot":
-			_pick_or_drop()  # machine slots (module installs) stay locked in the field
-		return
-	if _install_mode:
-		if Input.is_action_just_pressed("build_cancel"):
-			_install_mode = false
-		else:
-			_handle_install_input()
+		if Input.is_action_just_pressed("attack") and _grid() != null \
+				and String(_grid().get_cell(_cursor).get("kind", "")) != "machine_slot":
+			_pick_or_drop()  # machine slots stay locked in the field
 		return
 	if _move_mode:
 		if Input.is_action_just_pressed("build_cancel"):
@@ -357,11 +384,18 @@ func _handle_input() -> void:
 			_combine_a_core = Vector2i(-1, -1)  # cancel a pending combine selection
 			_message = "Combine cancelled."
 			return
+		if embedded:
+			return  # the host window owns [Esc] (closes the whole lair window)
 		try_close()  # refused while machines are still in storage
 		return
 	_move_cursor()
-	if Input.is_action_just_pressed("confirm"):
-		_accept_and_launch()
+	if not embedded and Input.is_action_just_pressed("cycle_target"):
+		_editing_bay = not _editing_bay
+		_cursor = Vector2i.ZERO
+		_message = "Editing the %s." % ("MODULE BAY (bot loadout)" if _editing_bay else "LAIR WORKSHOP")
+		return
+	if not embedded and Input.is_action_just_pressed("confirm"):
+		_accept_and_launch()  # launching happens from the bot, not the terminal's embedded view
 		return
 	if Input.is_action_just_pressed("storage"):
 		_open_storage()
@@ -379,16 +413,14 @@ func _handle_input() -> void:
 		_remove_transport_or_hint()
 		return
 	if Input.is_action_just_pressed("attack"):
-		if RunState.factory.get_cell(_cursor).get("kind", "") == "machine_slot":
-			_slot_action()
-		else:
-			_pick_or_drop()
+		if _grid().get_cell(_cursor).get("kind", "") != "machine_slot":
+			_pick_or_drop()  # machine slots are inert (leveling claims them; nothing to install)
 
 
 # --- transport radial (press [B] on a cell) ---
 
 func _open_radial() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	var k := String(f.get_cell(_cursor).get("kind", ""))
 	if k != "" and k != "resource":
 		_message = "Pick an empty cell for transport, then [B]."
@@ -461,7 +493,7 @@ func _handle_storage_input() -> void:
 ## merges the two into a DIFFERENT member of that type (a recycler → another recycler,
 ## etc.), dropped into your hand to place.
 func _combine_at_cursor() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	var mi := f.machine_at(_cursor)
 	if mi < 0:
 		_message = "Put the cursor on a machine's core, then [C]."
@@ -524,14 +556,14 @@ func _combine_result(group: String, a_id: String, b_id: String) -> String:
 ## If a machine is a cache with a stack, spill it back into the grid so combining/scrapping
 ## it doesn't silently eat the items.
 func _scrap_cache_contents(mi: int) -> void:
-	var cs := RunState.factory.cache_state(mi)
+	var cs := _grid().cache_state(mi)
 	if cs.is_empty():
 		return
 	var count := int(cs.get("count", 0))
 	var item := String(cs.get("id", ""))
 	for _i in count:
 		if item != "":
-			RunState.factory.add_resource(item)
+			_grid().add_resource(item)
 
 
 # --- positioning a chosen part ---
@@ -545,7 +577,7 @@ func _roll_place_layout() -> void:
 	_place_body_offsets = []
 	if _place_id.is_empty() or _place_id.begins_with("__"):
 		return
-	var layout := RunState.factory.roll_machine_layout(_place_id, _place_rng)
+	var layout := _grid().roll_machine_layout(_place_id, _place_rng)
 	_place_in_offsets = layout.get("in_offsets", [])
 	_place_out_offsets = layout.get("out_offsets", [])
 	_place_hold_offsets = layout.get("hold_offsets", [])
@@ -563,7 +595,11 @@ func _handle_place_input() -> void:
 		return
 	_move_cursor()
 	if Input.is_action_just_pressed("reshuffle"):
-		if transport:
+		if _place_id == "__inserter":
+			var order: Array = FactoryGrid.SCRAP_ORDER  # [R] cycles which scrap type it accepts
+			_place_scrap = String(order[(order.find(_place_scrap) + 1) % order.size()])
+			_message = "Inserter accepts %s — [R] to change, [Space] to place." % GameData.resource_name(_place_scrap)
+		elif transport:
 			_place_dir = Vector2i(-_place_dir.y, _place_dir.x)  # rotate the arrow
 		else:
 			_scrap_held_machine()  # [R] on a machine in hand → scrap it for tech data
@@ -592,15 +628,22 @@ func _scrap_held_machine() -> void:
 
 ## Tech Data a machine is worth when scrapped — bigger/more complex machines are worth more.
 func _scrap_value(id: String) -> int:
-	return RunState.factory.core_size_of(id) + 1
+	return _grid().core_size_of(id) + 1
+
+
+## True if a machine belongs in the bot's MODULE BAY rather than the lair workshop: weapons and
+## Ammo Loaders (flagged `bay` in machines.json). Everything else — recyclers, component makers,
+## and the AMMO MAKERS (ammo is made in the workshop now) — stays in the workshop.
+func _is_bay_module(def_id: String) -> bool:
+	return bool(GameData.machines.get(def_id, {}).get("bay", false))
 
 
 func _try_place() -> void:
 	var id := _place_id
 	if id.is_empty():
 		return
-	var f := RunState.factory
-	var transport := id == "__conveyor" or id == "__splitter" or id == "__filter"
+	var f := _grid()
+	var transport := id == "__conveyor" or id == "__splitter" or id == "__filter" or id == "__inserter"
 	var valid: bool
 	if transport:
 		# Transport can go on empty cells or over a loose item (it gets shifted aside).
@@ -612,9 +655,21 @@ func _try_place() -> void:
 		var why := " or rotate [R]" if transport else ", or scrap it [R]"
 		_message = "Won't fit here — move it%s." % why
 		return
-	# Pay for it. Transport comes from storage; caches from storage or materials; found machines
-	# are already yours (consume one from stock).
-	if transport:
+	# Category gate: weapons + consumable processors (ammo makers…) belong in the bot's MODULE BAY;
+	# refiners/crafters/caches belong in the LAIR WORKSHOP. Transport is neutral (allowed in both).
+	if not transport:
+		var bay_module := _is_bay_module(id)
+		if _editing_bay and not bay_module:
+			_message = "%s belongs in the lair workshop — [Tab] to switch." % _part_name(id)
+			return
+		if not _editing_bay and bay_module:
+			_message = "%s is a bot module — put it in the bay ([Tab])." % _part_name(id)
+			return
+	# Pay for it. Scrap inserters are free (the core routing tool); other transport comes from
+	# storage; caches from storage or materials; found machines are already yours.
+	if id == "__inserter":
+		pass  # free to place
+	elif transport:
 		# Conveyors/splitters/filters are found-and-repaired items now — place only from storage.
 		if RunState.stock_count(id) <= 0:
 			_message = "No %s in storage — find and repair one out in a run." % _part_name(id)
@@ -629,14 +684,16 @@ func _try_place() -> void:
 		else:
 			_message = "Need %s." % _cost_text(RunState.part_cost(id))
 			return
-	elif id != "scrapper_arm":
+	else:
 		# A stored machine instance — confirmed below; it's removed from storage on a real drop.
 		if _place_instance_index < 0 or _place_instance_index >= RunState.machine_instances.size():
 			_message = "No %s to place." % _part_name(id)
 			return
 	# Place it.
 	if transport:
-		if id == "__conveyor":
+		if id == "__inserter":
+			f.place_inserter(_cursor, _place_scrap)
+		elif id == "__conveyor":
 			f.place_conveyor(_cursor, _place_dir)
 		elif id == "__splitter":
 			f.place_splitter(_cursor, _place_dir)
@@ -656,7 +713,7 @@ func _try_place() -> void:
 ## Browsing [R]: removes a transport part (back to stock), or — on a machine — points you
 ## at the lift-then-scrap flow ([M] to pick it up, then [R] in hand to scrap for tech data).
 func _remove_transport_or_hint() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	var kind := String(f.get_cell(_cursor).get("kind", ""))
 	if kind == "conveyor" or kind == "splitter" or kind == "filter":
 		var item := String(f.get_cell(_cursor).get("item", ""))
@@ -670,39 +727,8 @@ func _remove_transport_or_hint() -> void:
 		_message = "[M] to pick the machine up, then [R] to scrap it for tech data."
 
 
-func _slot_action() -> void:
-	var f := RunState.factory
-	if not f.module_at(_cursor).is_empty():
-		var removed := f.remove_module(_cursor)
-		_message = "Removed %s." % GameData.modules.get(removed, {}).get("name", removed)
-		return
-	_install_opts.clear()
-	for id: String in MetaState.modules_owned:
-		if MetaState.module_count(id) - f.installed_count(id) > 0:
-			_install_opts.append(id)
-	if _install_opts.is_empty():
-		_message = "No modules available — decode some at a station."
-		return
-	_install_slot = _cursor
-	_install_index = 0
-	_install_mode = true
-	_message = ""
-
-
-func _handle_install_input() -> void:
-	if Input.is_action_just_pressed("move_left") or Input.is_action_just_pressed("move_up"):
-		_install_index = maxi(_install_index - 1, 0)
-	if Input.is_action_just_pressed("move_right") or Input.is_action_just_pressed("move_down"):
-		_install_index = mini(_install_index + 1, _install_opts.size() - 1)
-	if Input.is_action_just_pressed("attack") or Input.is_action_just_pressed("confirm"):
-		var id: String = _install_opts[_install_index]
-		if RunState.factory.install_module(_install_slot, id):
-			_message = "Installed %s." % GameData.modules.get(id, {}).get("name", id)
-		_install_mode = false
-
-
 func _begin_move() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	var mi := f.machine_at(_cursor)
 	if mi >= 0:
 		_move_mi = mi
@@ -721,7 +747,7 @@ func _begin_move() -> void:
 
 
 func _handle_move_conv_input() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	_move_cursor()
 	if Input.is_action_just_pressed("reshuffle"):  # rotate 90° CW
 		_conv_cell["dir"] = Vector2i(-int(_conv_cell.dir.y), int(_conv_cell.dir.x))
@@ -740,13 +766,13 @@ func _handle_move_conv_input() -> void:
 
 
 func _cancel_move_conv() -> void:
-	RunState.factory.set_cell(_conv_from, _conv_cell)  # put it back
+	_grid().set_cell(_conv_from, _conv_cell)  # put it back
 	_move_conv = false
 	_message = "Move cancelled."
 
 
 func _handle_move_input() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	_move_cursor()  # the whole machine follows the cursor
 	if Input.is_action_just_pressed("storage"):
 		_stash_moving_machine()  # [G] on a lifted machine → send it to storage
@@ -766,11 +792,8 @@ func _handle_move_input() -> void:
 ## Scraps the machine currently lifted for a move into Tech Data (the "break it down"
 ## path for a machine already on your grid).
 func _scrap_moving_machine() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	var did := String(f.machines[_move_mi].get("def_id", ""))
-	if did == "scrapper_arm":
-		_message = "The Scrapper Arm can't be scrapped."
-		return
 	_scrap_cache_contents(_move_mi)
 	f.pickup_machine(_move_mi)  # remove it from the grid
 	var gained := _scrap_value(did)
@@ -782,11 +805,8 @@ func _scrap_moving_machine() -> void:
 ## Sends the machine currently lifted for a move into the storage list (off the grid) so you
 ## can clear space and rearrange, then place it again later with [G].
 func _stash_moving_machine() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	var did := String(f.machines[_move_mi].get("def_id", ""))
-	if did == "scrapper_arm":
-		_message = "The Scrapper Arm can't be stored."
-		return
 	var cs := f.cache_state(_move_mi)
 	if not cs.is_empty() and int(cs.get("count", 0)) > 0:
 		_message = "Empty the cache before storing it."
@@ -820,7 +840,7 @@ func _move_cursor() -> void:
 	if step == Vector2i.ZERO:
 		return
 	var candidate := _cursor + step
-	if RunState.factory != null and RunState.factory.in_bounds(candidate):
+	if _grid() != null and _grid().in_bounds(candidate):
 		_cursor = candidate
 
 
@@ -828,7 +848,7 @@ func _move_cursor() -> void:
 ## is added to the stack; an empty cell (or empty conveyor slot) receives ONE from the
 ## stack. So you can sweep up several of a resource, then place/feed them one per press.
 func _pick_or_drop() -> void:
-	var f := RunState.factory
+	var f := _grid()
 	if f == null:
 		return
 	var cell := f.get_cell(_cursor)
@@ -875,7 +895,7 @@ func _pick_or_drop() -> void:
 ## Clears the item at the cursor (a loose resource cell, or a conveyor's carry slot).
 func _clear_item_at(cell: Dictionary, kind: String) -> void:
 	if kind == "resource":
-		RunState.factory.set_cell(_cursor, {})
+		_grid().set_cell(_cursor, {})
 	else:
 		cell["item"] = ""  # get_cell returns the live grid dict, so this mutates it
 
@@ -888,6 +908,8 @@ func _dec_carried() -> void:
 
 
 func _part_name(id: String) -> String:
+	if id == "__inserter":
+		return "Scrap Inserter"
 	if id == "__conveyor":
 		return "Conveyor"
 	if id == "__splitter":
@@ -905,9 +927,9 @@ func _cost_text(cost: Dictionary) -> String:
 
 
 ## Everything placeable now comes from stock (machines found in rooms; transport/caches
-## crafted at a Fabricator) except the free starter arm.
+## crafted at a Fabricator) except the free scrap inserter.
 func _affordable(id: String) -> bool:
-	return id == "scrapper_arm" or RunState.stock_count(id) > 0
+	return id == "__inserter" or RunState.stock_count(id) > 0
 
 
 # ---------------------------------------------------------------- draw ----
@@ -923,7 +945,7 @@ func _draw_arm_bar() -> void:
 	draw_rect(r, Color(col, 0.9), false, 1.5)
 	var tex := ContentLibrary.get_icon(String(def.get("icon", "tech_data")), Vector2i(16, 16), String(def.get("color", "")))
 	draw_texture_rect(tex, Rect2(r.position + Vector2(5, 7), Vector2(16, 16)), false)
-	var n := RunState.currency_count("tech_data")
+	var n := RunState.get_quantity("tech_data")
 	draw_string(_font, r.position + Vector2(24, 20), "%d" % n, HORIZONTAL_ALIGNMENT_LEFT, 44, 13, Color(0.95, 0.95, 0.98) if n > 0 else Color(0.5, 0.5, 0.55))
 
 
@@ -973,10 +995,15 @@ func _draw_machine_borders(f: FactoryGrid) -> void:
 
 
 func _draw() -> void:
-	var f := RunState.factory
-	draw_rect(Rect2(Vector2.ZERO, PANEL_SIZE), Color(0.06, 0.06, 0.09, 1.0))
-	draw_string(_font, Vector2(14, 34), "FACTORY", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.9, 0.9, 0.95))
-	_draw_arm_bar()
+	var f := _grid()
+	if not embedded:
+		# Standalone chrome. When embedded, the host (LairPanel) paints the background, title
+		# and Tech Data counter, so we skip all of it and draw only the grid + context panel.
+		draw_rect(Rect2(Vector2.ZERO, PANEL_SIZE), Color(0.06, 0.06, 0.09, 1.0))
+		var title := "MODULE BAY" if _editing_bay else "LAIR WORKSHOP"
+		draw_string(_font, Vector2(14, 34), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.8, 0.9, 1.0) if _editing_bay else Color(0.9, 0.9, 0.95))
+		draw_string(_font, Vector2(220, 32), "[Tab] %s" % ("→ Workshop" if _editing_bay else "→ Bay"), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.6, 0.7, 0.85))
+		_draw_arm_bar()
 	if f == null:
 		return
 
@@ -1028,21 +1055,20 @@ func _draw() -> void:
 	# --- right: the context panel ---
 	var rx := RPANEL_X + 12
 	var rw := RPANEL_W - 24
-	draw_line(Vector2(RPANEL_X, 24), Vector2(RPANEL_X, PANEL_SIZE.y - 20), Color(0.2, 0.2, 0.26), 1.0)
+	var rtop := 92.0 if embedded else RPANEL_TOP  # clear the host's tab strip when embedded
+	draw_line(Vector2(RPANEL_X, 88.0 if embedded else 24.0), Vector2(RPANEL_X, PANEL_SIZE.y - 20), Color(0.2, 0.2, 0.26), 1.0)
 	if _storage_mode:
-		_draw_storage_panel(rx, RPANEL_TOP, rw)
+		_draw_storage_panel(rx, rtop, rw)
 	elif _place_mode:
-		_draw_part_info(rx, RPANEL_TOP, rw, _place_id, true)
-	elif _install_mode:
-		_draw_install_panel(rx, RPANEL_TOP, rw)
+		_draw_part_info(rx, rtop, rw, _place_id, true)
 	elif _move_mode:
-		_draw_move_panel(rx, RPANEL_TOP, rw)
+		_draw_move_panel(rx, rtop, rw)
 	else:
-		_draw_cursor_info(rx, RPANEL_TOP, rw)
+		_draw_cursor_info(rx, rtop, rw)
 
 	# Combine selection highlight + the radial overlay sit on top of the grid.
 	if _combine_a_core != Vector2i(-1, -1):
-		var ci := RunState.factory.machine_at(_combine_a_core)
+		var ci := _grid().machine_at(_combine_a_core)
 		if ci >= 0:
 			var cr := _cell_rect(_combine_a_core)
 			draw_rect(cr.grow(2), Color(0.95, 0.85, 0.5), false, 3.0)
@@ -1072,6 +1098,8 @@ func _base_controls() -> String:
 		return "[WASD] move   [R] rotate   [Space] place   [Esc] cancel"
 	var combine_hint := "[C] combine" if _combine_a_core == Vector2i(-1, -1) else "[C] merge with marked"
 	var store_hint := "[G] storage (%d)" % _stock_total() if _has_unplaced() else "[G] storage"
+	if embedded:
+		return "[WASD] move  [Space] act  [M] lift  [B] transport  %s  %s  [Tab] tabs  [Esc] close" % [combine_hint, store_hint]
 	return "[WASD] move  [Space] act  [M] lift  [B] transport  %s  %s  [Enter] accept & launch  [Esc] close" % [combine_hint, store_hint]
 
 
@@ -1111,7 +1139,7 @@ func _draw_part_info(x: float, y: float, w: float, id: String, _positioning: boo
 	var tex := ContentLibrary.get_icon(_icon_of(id), Vector2i(22, 22), _color_of(id))
 	draw_texture_rect(tex, Rect2(x, y, 22, 22), false)
 	draw_string(_font, Vector2(x + 30, y + 17), _part_name(id), HORIZONTAL_ALIGNMENT_LEFT, w - 30, 16, Color(0.92, 0.92, 0.96))
-	var tag := "free to build" if id == "scrapper_arm" else "in stock: %d" % RunState.stock_count(id)
+	var tag := "free to build" if id == "__inserter" else "in stock: %d" % RunState.stock_count(id)
 	draw_string(_font, Vector2(x, y + 40), tag, HORIZONTAL_ALIGNMENT_LEFT, w, 13, Color(0.8, 0.85, 0.9))
 	var yy := y + 62
 	for line: String in _makes_lines(id):
@@ -1120,7 +1148,7 @@ func _draw_part_info(x: float, y: float, w: float, id: String, _positioning: boo
 
 
 func _draw_cursor_info(x: float, y: float, w: float) -> void:
-	var f := RunState.factory
+	var f := _grid()
 	var cell := f.get_cell(_cursor)
 	var kind := String(cell.get("kind", ""))
 	draw_string(_font, Vector2(x, y + 14), "INSPECT", HORIZONTAL_ALIGNMENT_LEFT, w, 16, Color(0.9, 0.9, 0.95))
@@ -1129,7 +1157,7 @@ func _draw_cursor_info(x: float, y: float, w: float) -> void:
 		var def: Dictionary = GameData.machines.get(String(f.machines[mi].def_id), {})
 		var tex := ContentLibrary.get_icon(String(def.get("icon", "")), Vector2i(22, 22), String(def.get("color", "")))
 		draw_texture_rect(tex, Rect2(x, y + 26, 22, 22), false)
-		draw_string(_font, Vector2(x + 30, y + 43), "%s  L%d" % [String(def.get("name", "")), f.level_of(mi)], HORIZONTAL_ALIGNMENT_LEFT, w - 30, 15, Color(0.92, 0.92, 0.96))
+		draw_string(_font, Vector2(x + 30, y + 43), String(def.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, w - 30, 15, Color(0.92, 0.92, 0.96))
 		var stat := f.status_at(_cursor)
 		draw_string(_font, Vector2(x, y + 66), "Status: %s" % (stat if stat != "" else "—"), HORIZONTAL_ALIGNMENT_LEFT, w, 13, Color(0.8, 0.85, 0.9))
 		var yy := y + 86
@@ -1138,34 +1166,24 @@ func _draw_cursor_info(x: float, y: float, w: float) -> void:
 			yy += 30
 		draw_string(_font, Vector2(x, yy + 4), "[M] move/lift   [C] combine   [G] store", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.7, 0.7, 0.75))
 	elif kind == "machine_slot":
-		var mod := f.module_at(_cursor)
-		draw_string(_font, Vector2(x, y + 40), "Module slot", HORIZONTAL_ALIGNMENT_LEFT, w, 14, Color(0.85, 0.85, 0.95))
-		if mod != "":
-			var md: Dictionary = GameData.modules.get(mod, {})
-			draw_string(_font, Vector2(x, y + 60), "%s — %s" % [String(md.get("name", mod)), String(md.get("desc", ""))], HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.72, 0.82, 0.78))
-			draw_string(_font, Vector2(x, y + 82), "[Space] remove", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.7, 0.7, 0.75))
-		else:
-			draw_string(_font, Vector2(x, y + 60), "empty — [Space] install a module", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.72, 0.82, 0.78))
+		draw_string(_font, Vector2(x, y + 40), "Machine slot", HORIZONTAL_ALIGNMENT_LEFT, w, 14, Color(0.85, 0.85, 0.95))
+		draw_string(_font, Vector2(x, y + 60), "claimed by a leveled machine.", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.72, 0.82, 0.78))
 	elif kind == "resource":
 		var id := String(cell.id)
 		var tex := ContentLibrary.get_icon(GameData.resource_icon(id), Vector2i(20, 20), GameData.resource_color(id))
 		draw_texture_rect(tex, Rect2(x, y + 26, 20, 20), false)
-		var n := RunState.factory.cell_count(cell)
+		var n := _grid().cell_count(cell)
 		var mx := GameData.stack_max(id)
 		draw_string(_font, Vector2(x + 28, y + 42), "%s%s" % [GameData.resource_name(id), ("  x%d" % n) if n > 1 else ""], HORIZONTAL_ALIGNMENT_LEFT, w - 28, 15, Color(0.92, 0.92, 0.96))
 		var detail := "stack %d / %d  —  [Space] pick up the stack" % [n, mx] if mx > 1 else "one unit  —  [Space] pick up / move"
 		draw_string(_font, Vector2(x, y + 66), detail, HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.72, 0.82, 0.78))
-	elif kind == "arm_slot":
+	elif kind == "inserter":
 		var scrap := String(cell.get("scrap", ""))
-		var tier := f.arm_tier_of(scrap)
-		var locked := tier > f.arm_level()
+		var tier := FactoryGrid.scrap_tier(scrap)
 		var tex := ContentLibrary.get_icon(GameData.resource_icon(scrap), Vector2i(20, 20), GameData.resource_color(scrap))
-		draw_texture_rect(tex, Rect2(x, y + 26, 20, 20), false, Color(1, 1, 1, 0.35 if locked else 1.0))
-		draw_string(_font, Vector2(x + 28, y + 42), "Arm slot — %s (tier %d)" % [GameData.resource_name(scrap), tier], HORIZONTAL_ALIGNMENT_LEFT, w - 28, 15, Color(0.92, 0.92, 0.96))
-		if locked:
-			draw_string(_font, Vector2(x, y + 66), "🔒 Locked — upgrade the Scrapper Arm to level %d." % tier, HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.9, 0.78, 0.5))
-		else:
-			draw_string(_font, Vector2(x, y + 66), "Holds %d. An adjacent recycler pulls it out." % int(cell.get("count", 0)), HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.72, 0.82, 0.78))
+		draw_texture_rect(tex, Rect2(x, y + 26, 20, 20), false)
+		draw_string(_font, Vector2(x + 28, y + 42), "Scrap inserter — %s (tier %d)" % [GameData.resource_name(scrap), tier], HORIZONTAL_ALIGNMENT_LEFT, w - 28, 15, Color(0.92, 0.92, 0.96))
+		draw_string(_font, Vector2(x, y + 66), "Holds %d. Hauled %s lands here; an adjacent recycler pulls it out." % [int(cell.get("count", 0)), GameData.resource_name(scrap)], HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.72, 0.82, 0.78))
 	elif kind == "conveyor" or kind == "splitter" or kind == "filter":
 		draw_string(_font, Vector2(x, y + 42), _part_name("__" + kind), HORIZONTAL_ALIGNMENT_LEFT, w, 15, Color(0.92, 0.92, 0.96))
 		if kind == "filter":
@@ -1184,20 +1202,8 @@ func _draw_cursor_info(x: float, y: float, w: float) -> void:
 			draw_string(_font, Vector2(x, y + 62), "[B] build transport", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.72, 0.82, 0.78))
 
 
-func _draw_install_panel(x: float, y: float, w: float) -> void:
-	draw_string(_font, Vector2(x, y + 14), "INSTALL MODULE", HORIZONTAL_ALIGNMENT_LEFT, w, 16, Color(0.9, 0.9, 0.95))
-	for i in _install_opts.size():
-		var id: String = _install_opts[i]
-		var md: Dictionary = GameData.modules.get(id, {})
-		var ry := y + 34 + i * 26
-		if i == _install_index:
-			draw_rect(Rect2(x - 2, ry - 2, w + 4, 24), Color(1, 1, 1, 0.10))
-		draw_string(_font, Vector2(x + 4, ry + 13), "%s — %s" % [String(md.get("name", id)), String(md.get("desc", ""))], HORIZONTAL_ALIGNMENT_LEFT, w - 8, 12, Color(0.85, 0.9, 0.85))
-	draw_string(_font, Vector2(x, y + 34 + _install_opts.size() * 26 + 10), "[←→] choose   [Space] install   [Esc] cancel", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.7, 0.7, 0.75))
-
-
 func _draw_move_panel(x: float, y: float, w: float) -> void:
-	var f := RunState.factory
+	var f := _grid()
 	var mdef: Dictionary = GameData.machines.get(String(f.machines[_move_mi].def_id), {}) if _move_mi >= 0 else {}
 	draw_string(_font, Vector2(x, y + 14), "MOVE: %s" % String(mdef.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, w, 16, Color(0.9, 0.9, 0.95))
 	var fits := f.can_relocate(_move_mi, _cursor, f.move_offsets(_move_mi))
@@ -1257,6 +1263,8 @@ func _draw_layout_thumb(inst: Dictionary, pos: Vector2, box: float) -> void:
 
 func _icon_of(id: String) -> String:
 	match id:
+		"__inserter":
+			return _place_scrap  # show the pinned scrap type's icon
 		"__conveyor":
 			return "conveyor"
 		"__splitter":
@@ -1397,7 +1405,6 @@ func _draw_cell(f: FactoryGrid, pos: Vector2i, rect: Rect2, role: String, previe
 			draw_string(_font, rect.position + Vector2(3, rect.size.y - 4), "%d/%d" % [int(cs.count), int(cs.capacity)], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.6, 1.0, 0.7) if full else Color(0.7, 0.85, 1.0))
 		else:
 			draw_string(_font, rect.position + Vector2(rect.size.x - 12, 12), String(ARROWS.get(f.output_position(m) - pos, "•")), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.7, 1, 0.7))
-			draw_string(_font, rect.position + Vector2(3, rect.size.y - 4), "L%d" % f.level_of(int(cell.mi)), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 0.9, 0.5))
 		var st := String(m.get("status", ""))
 		if st != "":
 			var dot := Color(0.5, 0.5, 0.55)
@@ -1411,12 +1418,7 @@ func _draw_cell(f: FactoryGrid, pos: Vector2i, rect: Rect2, role: String, previe
 				var bar_col := Color(0.4, 0.9, 0.5) if st == "working" else Color(0.95, 0.75, 0.3)
 				draw_rect(Rect2(rect.position + Vector2(2, rect.size.y - 3), Vector2((rect.size.x - 4) * ratio, 2)), bar_col)
 	elif kind == "machine_slot":
-		var mod := f.module_at(pos)
-		if mod != "":
-			var mdef: Dictionary = GameData.modules.get(mod, {})
-			draw_texture_rect(ContentLibrary.get_icon(String(mdef.get("icon", mod)), Vector2i(22, 22), String(mdef.get("color", ""))), rect.grow(-7), false)
-		else:
-			draw_rect(rect.grow(-10), Color(0.35, 0.35, 0.5), false, 2.0)
+		draw_rect(rect.grow(-10), Color(0.35, 0.35, 0.5), false, 2.0)
 	elif kind == "conveyor" or kind == "splitter" or kind == "filter":
 		draw_rect(rect, Color(0.14, 0.11, 0.13) if kind == "filter" else Color(0.10, 0.13, 0.13))
 		draw_string(_font, rect.position + Vector2(4, rect.size.y - 6), String(ARROWS.get(Vector2i(cell.get("dir", Vector2i.RIGHT)), "•")), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.45, 0.75, 0.75))
@@ -1434,21 +1436,16 @@ func _draw_cell(f: FactoryGrid, pos: Vector2i, rect: Rect2, role: String, previe
 		var carried := String(cell.get("item", ""))
 		if carried != "":
 			draw_texture_rect(ContentLibrary.get_icon(GameData.resource_icon(carried), Vector2i(15, 15), GameData.resource_color(carried)), rect.grow(-11), false)
-	elif kind == "arm_slot":
-		# A Scrapper Arm scrap slot: tinted to its type, showing the scrap icon + stored count.
-		# A slot whose tier the arm hasn't reached yet is LOCKED — dimmed with a padlock.
+	elif kind == "inserter":
+		# A scrap inserter: tinted to its pinned type, showing the scrap icon + stored count.
 		var scrap := String(cell.get("scrap", ""))
 		var n := int(cell.get("count", 0))
-		var locked := f.arm_tier_of(scrap) > f.arm_level()
-		draw_rect(rect, Color(0.10, 0.10, 0.12) if locked else Color(0.18, 0.16, 0.10))
-		draw_rect(rect.grow(-2), Color(GameData.resource_color(scrap), 0.18 if locked else 0.55), false, 2.0)
-		draw_texture_rect(ContentLibrary.get_icon(GameData.resource_icon(scrap), Vector2i(18, 18), GameData.resource_color(scrap)), rect.grow(-9), false, Color(1, 1, 1, 0.22 if locked else (0.95 if n > 0 else 0.4)))
-		if locked:
-			draw_string(_font, rect.position + Vector2(rect.size.x * 0.5 - 5, rect.size.y * 0.5 + 6), "🔒", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.8, 0.85))
-		else:
-			var badge := Rect2(rect.position + Vector2(rect.size.x - 17, rect.size.y - 14), Vector2(15, 12))
-			draw_rect(badge, Color(0.08, 0.09, 0.12, 0.92))
-			draw_string(_font, badge.position + Vector2(2, 10), "%d" % n, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.95, 0.95, 0.7) if n > 0 else Color(0.55, 0.55, 0.6))
+		draw_rect(rect, Color(0.18, 0.16, 0.10))
+		draw_rect(rect.grow(-2), Color(GameData.resource_color(scrap), 0.55), false, 2.0)
+		draw_texture_rect(ContentLibrary.get_icon(GameData.resource_icon(scrap), Vector2i(18, 18), GameData.resource_color(scrap)), rect.grow(-9), false, Color(1, 1, 1, 0.95 if n > 0 else 0.4))
+		var badge := Rect2(rect.position + Vector2(rect.size.x - 17, rect.size.y - 14), Vector2(15, 12))
+		draw_rect(badge, Color(0.08, 0.09, 0.12, 0.92))
+		draw_string(_font, badge.position + Vector2(2, 10), "%d" % n, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.95, 0.95, 0.7) if n > 0 else Color(0.55, 0.55, 0.6))
 	elif kind == "resource":
 		# While an out-slide pop is playing for this cell, the pop overlay draws the
 		# item instead (so it isn't drawn twice).
@@ -1517,6 +1514,8 @@ func _preview_cells(f: FactoryGrid) -> Dictionary:
 
 
 func _makes_lines(id: String) -> Array:
+	if id == "__inserter":
+		return ["Reserves this cell for %s." % GameData.resource_name(_place_scrap), "Hauled scrap of that type lands here", "instead of filling top-left. [R] changes type."]
 	if id == "__conveyor":
 		return ["Carries items one cell along its arrow", "(bridges gaps between machines)."]
 	if id == "__splitter":

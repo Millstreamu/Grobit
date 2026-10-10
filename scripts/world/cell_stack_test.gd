@@ -1,5 +1,5 @@
 extends Node
-## In-cell stacking: ammo stacks to 16, tier-1 components to 8, raw materials not at all.
+## In-cell stacking: ammo stacks to 16, tier-1 components to 8, refined materials to 50.
 ## Machines stack their output, pickup takes the whole stack, and consumers drain stacks.
 
 var fail := 0
@@ -23,11 +23,13 @@ func _ready() -> void:
 	h.add_resource("power_coupling")
 	_ck(_occupied(h) == 2, "the 9th component starts a second stack")
 
-	# Raw materials don't stack (stack 1 — one per cell).
+	# Refined materials stack to 50 (so a material-based economy can hold enough to spend).
 	var m := FactoryGrid.new(4, 4)
+	for _i in 50:
+		m.add_resource("copper")
+	_ck(_occupied(m) == 1, "50 copper stack into one cell")
 	m.add_resource("copper")
-	m.add_resource("copper")
-	_ck(_occupied(m) == 2, "materials don't stack (one per cell)")
+	_ck(_occupied(m) == 2, "the 51st copper starts a second stack")
 
 	# remove_resource drains a stack.
 	var r := FactoryGrid.new(4, 4)
@@ -35,14 +37,6 @@ func _ready() -> void:
 		r.add_resource("charge_cells")
 	_ck(r.remove_resource("charge_cells", 3) == 3, "remove_resource drains 3 from the stack")
 	_ck(int(r.resource_counts().get("charge_cells", 0)) == 2, "2 left after draining")
-
-	# A weapon consumes one unit from a stacked ammo input.
-	var w := FactoryGrid.new(6, 6)
-	var wi := w.place_machine("steel_weapon", Vector2i(3, 3))
-	var inp: Vector2i = w.input_positions(w.machines[wi])[0]
-	w.set_cell(inp, {"kind": "resource", "id": "steel_slugs", "count": 5})
-	w.try_fire_weapon()
-	_ck(w.cell_count(w.get_cell(inp)) == 4, "firing consumes one from the ammo stack")
 
 	# A machine stacks its output into one cell across crafts.
 	var a := FactoryGrid.new(6, 6)

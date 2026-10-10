@@ -70,10 +70,10 @@ func _ready() -> void:
 func _chain_simulation() -> void:
 	print("\n=== C) END-TO-END CHAIN  (single 8x8 grid) ===")
 	var f := FactoryGrid.new(8, 8)
-	var arm := f.place_machine("scrapper_arm", Vector2i(0, 0))
+	f.place_inserter(Vector2i(0, 0), "copper_scrap")
 	var rec := f.place_machine("copper_recycler", Vector2i(3, 1))
 	var am := f.place_machine("copper_ammo_maker", Vector2i(3, 4))
-	print("  placed  arm:%s recycler:%s ammo_maker:%s" % [arm >= 0, rec >= 0, am >= 0])
+	print("  placed  inserter:ok recycler:%s ammo_maker:%s" % [rec >= 0, am >= 0])
 	var used := 0
 	for y in f.rows:
 		for x in f.cols:

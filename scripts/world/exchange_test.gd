@@ -8,7 +8,6 @@ var fail := 0
 
 func _ready() -> void:
 	RunState.factory = FactoryGrid.new(8, 8)
-	RunState.factory.place_machine("scrapper_arm", Vector2i(0, 0))
 	RunState.exchange_credit = 0
 	RunState.exchange_machines_granted = 0
 	RunState.machine_stock = {}

@@ -4,7 +4,6 @@ extends Node
 func _ready() -> void:
 	var fails := 0
 	RunState.factory = FactoryGrid.new(6, 6)
-	RunState.factory.place_machine("scrapper_arm", Vector2i(0, 0))
 	RunState.machine_stock = {}
 	var fp := FabricatorPanel.new()
 	add_child(fp)

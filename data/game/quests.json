@@ -1,0 +1,35 @@
+{
+  "_comment": "Colony quests shown on the lair terminal's Tasks tab. Progress is computed live from MetaState (goal.type/target/key); when done you CLAIM the reward once (tracked in quests_claimed). Rewards grant Tech Data into the run inventory.",
+  "quests": [
+    {
+      "id": "scout_tools",
+      "name": "Find a better tool — get any goblin to tier 2",
+      "goal": { "type": "tool_tier", "target": 2 },
+      "reward": { "tech_data": 3 }
+    },
+    {
+      "id": "full_colony",
+      "name": "Grow the colony to 6 goblins",
+      "goal": { "type": "colony", "target": 6 },
+      "reward": { "tech_data": 5 }
+    },
+    {
+      "id": "tune_up",
+      "name": "Permanently upgrade a Steel Recycler to Lv 2",
+      "goal": { "type": "machine_level", "key": "steel_recycler", "target": 2 },
+      "reward": { "tech_data": 4 }
+    },
+    {
+      "id": "first_seal",
+      "name": "Seal the lair — oxygen fully restored",
+      "goal": { "type": "need", "key": "oxygen", "target": 10 },
+      "reward": { "tech_data": 6 }
+    },
+    {
+      "id": "homeward",
+      "name": "Restore every lair need to full",
+      "goal": { "type": "need_total", "target": 40 },
+      "reward": { "tech_data": 12 }
+    }
+  ]
+}
