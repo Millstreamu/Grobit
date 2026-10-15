@@ -1,0 +1,150 @@
+{
+  "image": "grobit-atlas.png",
+  "width": 128,
+  "height": 112,
+  "count": 20,
+  "padding": 0,
+  "spacing": 0,
+  "sprites": {
+    "grobit": {
+      "x": 64,
+      "y": 0,
+      "w": 32,
+      "h": 32,
+      "kind": "decor"
+    },
+    "grobit_gun_01": {
+      "x": 96,
+      "y": 32,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "enemy_01": {
+      "x": 112,
+      "y": 32,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "scrap_metal": {
+      "x": 96,
+      "y": 48,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "electronics": {
+      "x": 112,
+      "y": 48,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "tech_data": {
+      "x": 96,
+      "y": 64,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "battery_pack": {
+      "x": 112,
+      "y": 64,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "food": {
+      "x": 96,
+      "y": 80,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "proc_heat": {
+      "x": 112,
+      "y": 80,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "proc_press": {
+      "x": 0,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "proc_mold": {
+      "x": 16,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "proc_fold": {
+      "x": 32,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "ammo_loader": {
+      "x": 48,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "scrap_steel": {
+      "x": 64,
+      "y": 32,
+      "w": 32,
+      "h": 32,
+      "kind": "decor"
+    },
+    "scrap_copper": {
+      "x": 0,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "kind": "decor"
+    },
+    "scrap_plastic": {
+      "x": 32,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "kind": "decor"
+    },
+    "scrap_ceramic": {
+      "x": 64,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "kind": "decor"
+    },
+    "selection_16": {
+      "x": 64,
+      "y": 96,
+      "w": 16,
+      "h": 16,
+      "kind": "decor"
+    },
+    "selection_32": {
+      "x": 96,
+      "y": 0,
+      "w": 32,
+      "h": 32,
+      "kind": "decor"
+    },
+    "selection_64": {
+      "x": 0,
+      "y": 0,
+      "w": 64,
+      "h": 64,
+      "kind": "decor"
+    }
+  }
+}

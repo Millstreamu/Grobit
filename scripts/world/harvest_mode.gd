@@ -18,6 +18,11 @@ const MAX_ALIVE_BASE := 3      # besiegers alive at once, early
 const ESCALATE_EVERY := 8.0    # +1 to that cap every this many seconds after the breach
 const HEAT_RISE_PER_SEC := 4.0 # run-wide Heat gained per second while engaged in a breach (Phase 2.1)
 
+## Command cursor (Phase 3.3): while the squad is out you're a PLANTED turret — WASD drives this cursor
+## (not the bot), [F] commands the target under it (one goblin per press), [Esc] cancels that task.
+const CURSOR_SPEED := 150.0
+const CURSOR_MAX_RADIUS := 230.0  # how far the cursor can roam from the parked bot
+
 var bot: Node2D                 # the player / scrapbot the goblins deploy from and return to
 var hud: Node                   # for log messages (optional)
 var generator: Node             # AreaGenerator — to find the parked room + its doors
@@ -26,6 +31,8 @@ var active := false
 var recalling := false
 var _goblins: Array = []
 var _tasks: Array = []   # commanded targets in PRIORITY (assignment) order; idle goblins flow to these
+var _cursor := Vector2.ZERO
+var _font: Font
 
 var _siege_room: Room
 var _alarm := 0.0
@@ -38,6 +45,8 @@ var _spawners: Array = []   # destructible sources placed at the breached doors 
 
 func _ready() -> void:
 	add_to_group("harvest_mode")
+	z_index = 100  # the command cursor draws over the world
+	_font = ThemeDB.fallback_font
 
 
 func bot_position() -> Vector2:
@@ -77,6 +86,8 @@ func _process(delta: float) -> void:
 			recall()
 	if active:
 		advance_siege(delta)
+	if active and not recalling:
+		_update_command_cursor(delta)
 
 
 # ------------------------------------------------------------- deploy ----
@@ -92,6 +103,9 @@ func deploy() -> void:
 	active = true
 	recalling = false
 	_tasks.clear()  # goblins start IDLE — nothing is commanded until the player assigns a task
+	if bot.has_method("set_input_locked"):
+		bot.set_input_locked(true)  # planted turret while the squad is out
+	_cursor = bot.global_position
 	_siege_room = generator.room_at(bot.global_position) if generator != null and generator.has_method("room_at") else null
 	_alarm = 0.0
 	_breached = false
@@ -108,6 +122,8 @@ func deploy() -> void:
 		g.setup(self)
 		_goblins.append(g)
 	_log("%d goblins deploy — stripping the room. The noise will draw them in… [E] to recall." % n)
+	if hud != null and hud.has_method("nudge"):   # guided first run
+		hud.nudge("deploy", "Deployed! [WASD] move the cursor, [F] to send a goblin to a pile/machine. [Space] fires the turret.")
 
 
 ## Signals the goblins to drop everything and return to the bot. New besiegers stop coming.
@@ -115,6 +131,7 @@ func recall() -> void:
 	if not active or recalling:
 		return
 	recalling = true
+	queue_redraw()  # clear the command cursor — you're disengaging
 	_log("Recalling the goblins — get back to the bot and drive!")
 
 
@@ -131,6 +148,7 @@ func on_goblin_lost(goblin: Node) -> void:
 	_goblins.erase(goblin)
 	var who := String(goblin.gob_name) if goblin.get("gob_name") != null else ""
 	MetaState.lose_goblin(who)
+	RunState.note_goblin_lost(who if who != "" else "A goblin")  # for the end-of-run summary card
 	var label := who if who != "" else "A goblin"
 	_log("%s fell — the colony is down to %d." % [label, MetaState.colony_size()])
 	if _goblins.is_empty():
@@ -190,6 +208,89 @@ func goblins_on(target: Node) -> int:
 		if is_instance_valid(g) and g.assigned_target == target:
 			n += 1
 	return n
+
+
+func _idle_count() -> int:
+	var n := 0
+	for g: Variant in _goblins:
+		if is_instance_valid(g) and g.is_idle():
+			n += 1
+	return n
+
+
+# --------------------------------------------------------- command cursor ----
+
+## WASD moves the cursor (bounded to a radius around the parked bot); [F] commands the target under
+## it (one goblin per press); [Esc] cancels that task. The SelectionManager yields [F] while active.
+func _update_command_cursor(delta: float) -> void:
+	var mv := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	_cursor += mv * CURSOR_SPEED * delta
+	var off := _cursor - bot_position()
+	if off.length() > CURSOR_MAX_RADIUS:
+		_cursor = bot_position() + off.normalized() * CURSOR_MAX_RADIUS
+	var tgt := _target_under_cursor()
+	if Input.is_action_just_pressed("interact") and tgt != null:
+		if not command_target(tgt):
+			_log("No idle goblin can work that.")
+	if Input.is_action_just_pressed("build_cancel") and tgt != null:
+		cancel_target(tgt)
+	queue_redraw()
+
+
+## The room's fine tile size (px) — the grid the cursor snaps to. Falls back to 32 outside a room.
+func _tile_px() -> float:
+	if _siege_room != null and _siege_room.tile_size > 0.0:
+		return _siege_room.tile_size
+	return 32.0
+
+
+## The cursor snapped to the centre of the room tile it's over, so it lands cleanly on cells/targets.
+func _snapped_cursor() -> Vector2:
+	var t := _tile_px()
+	return Vector2((floor(_cursor.x / t) + 0.5) * t, (floor(_cursor.y / t) + 0.5) * t)
+
+
+## The strippable pile or broken machine in (or nearest) the snapped tile, or null.
+func _target_under_cursor() -> Node:
+	var snap := _snapped_cursor()
+	var reach := _tile_px() * 0.7
+	var best: Node = null
+	var best_d := reach
+	for n: Node in room_piles():
+		if n is ScrapNode and is_instance_valid(n) and not (n as ScrapNode).is_spent():
+			var d := snap.distance_to((n as Node2D).global_position)
+			if d < best_d:
+				best_d = d
+				best = n
+	for n: Node in room_machines():
+		if is_instance_valid(n) and bool(n.get("broken")):
+			var d := snap.distance_to((n as Node2D).global_position)
+			if d < best_d:
+				best_d = d
+				best = n
+	return best
+
+
+func _draw() -> void:
+	if not active or recalling:
+		return
+	var t := _tile_px()
+	var tgt := _target_under_cursor()
+	# A selection reticle: snapped to the tile grid, and sitting right on the target when there is one.
+	var at := (tgt as Node2D).global_position if tgt != null else _snapped_cursor()
+	var p := to_local(at)
+	var tint := Color(0.6, 1.0, 0.7) if tgt != null else Color(0.95, 0.97, 1.0)
+	var tex := ContentLibrary.get_icon("selection_32", Vector2i(32, 32))
+	draw_texture_rect(tex, Rect2(p - Vector2(t, t) * 0.5, Vector2(t, t)), false, tint)
+	# Goblin-count badges on every commanded task.
+	for task: Variant in _tasks:
+		if is_instance_valid(task):
+			var bp := to_local((task as Node2D).global_position) + Vector2(t * 0.4, -t * 0.4)
+			draw_string(_font, bp, "%d" % goblins_on(task), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.95, 0.9, 0.5))
+	# Idle-goblin readout by the bot.
+	var idle := _idle_count()
+	if idle > 0:
+		draw_string(_font, to_local(bot_position()) + Vector2(10, -14), "%d idle  ·  [F] command  [Esc] cancel" % idle, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.75, 0.82, 0.9))
 
 
 # -------------------------------------------------------------- siege ----
@@ -289,8 +390,11 @@ func _end_siege() -> void:
 	_breached = false
 	_since_breach = 0.0
 	_spawn_accum = 0.0
+	if bot != null and bot.has_method("set_input_locked"):
+		bot.set_input_locked(false)  # un-plant — you can drive again
 	active = false
 	recalling = false
+	queue_redraw()
 
 
 func _prune_enemies() -> void:

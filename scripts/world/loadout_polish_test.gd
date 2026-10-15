@@ -15,19 +15,19 @@ func _ready() -> void:
 	fail += _ck(not panel._is_bay_module("frame_maker"), "component makers stay in the workshop")
 	panel.free()
 
-	# --- cargo hold expansion (paid in refined materials now) ---
+	# --- cargo hold expansion (paid in base chain products now — Phase 4 economy swap) ---
 	MetaState.cargo_rows_bonus = 0
 	RunState.begin_run(GameData.first_area_id(), 1)
-	RunState.add("steel", 200)
-	RunState.add("copper", 200)
+	RunState.add("steel_plate", 200)
+	RunState.add("copper_sheet", 200)
 	fail += _ck(RunState.cargo.rows == RunState.CARGO_ROWS, "hold starts at base size")
 	var cost := MetaState.expand_cargo_cost()
-	var steel_before := RunState.get_quantity("steel")
-	fail += _ck(MetaState.expand_cargo(), "expand the hold with enough materials")
-	fail += _ck(MetaState.cargo_rows_bonus == 1 and RunState.get_quantity("steel") == steel_before - int(cost.get("steel", 0)), "bonus +1 and materials spent from inventory")
+	var steel_before := RunState.get_quantity("steel_plate")
+	fail += _ck(MetaState.expand_cargo(), "expand the hold with enough products")
+	fail += _ck(MetaState.cargo_rows_bonus == 1 and RunState.get_quantity("steel_plate") == steel_before - int(cost.get("steel_plate", 0)), "bonus +1 and products spent from inventory")
 	RunState.begin_run(GameData.first_area_id(), 1)  # next run's hold reflects the bonus
-	RunState.add("steel", 120)   # enough for the remaining expansions (and it fits the grid's stacks)
-	RunState.add("copper", 90)
+	RunState.add("steel_plate", 120)   # enough for the remaining expansions (and it fits the grid's stacks)
+	RunState.add("copper_sheet", 90)
 	fail += _ck(RunState.cargo.rows == RunState.CARGO_ROWS + 1, "a new run's hold is one row bigger")
 
 	# cap

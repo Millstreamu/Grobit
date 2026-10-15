@@ -1,0 +1,28 @@
+{
+  "_comment": "Phase 4 production redesign. Generic process-verb machines (heat/press/mold/fold) are wired into a CHAIN: scrap enters an Intake and is handed machine-to-machine only where an OUT port meets the next IN port (no conveyors — misaligned = dead chain). The product is f(input scrap type, ORDERED verb sequence). Recipe knowledge is HYBRID: 'known': true recipes are starter-known; the rest are discovered by experiment and logged (MetaState.discovered_recipes). Products referenced here are added to resources.json as the new economy lands.",
+  "verbs": {
+    "heat":  { "name": "Heater",  "icon": "proc_heat",  "color": "e0662e" },
+    "press": { "name": "Presser", "icon": "proc_press", "color": "8a93a0" },
+    "mold":  { "name": "Molder",  "icon": "proc_mold",  "color": "3f9fb6" },
+    "fold":  { "name": "Folder",  "icon": "proc_fold",  "color": "c8a24a" }
+  },
+  "recipes": [
+    { "scrap": "steel_scrap",   "sequence": ["heat", "press"],          "product": "steel_plate",     "seconds": 2.5, "known": true },
+    { "scrap": "steel_scrap",   "sequence": ["heat", "mold"],           "product": "steel_ingot",     "seconds": 2.5, "known": true },
+    { "scrap": "steel_scrap",   "sequence": ["press", "fold", "heat"],  "product": "steel_spring",    "seconds": 3.5 },
+    { "scrap": "copper_scrap",  "sequence": ["heat", "press"],          "product": "copper_sheet",    "seconds": 2.5, "known": true },
+    { "scrap": "copper_scrap",  "sequence": ["heat", "fold"],           "product": "copper_coil",     "seconds": 3.0 },
+    { "scrap": "plastic_scrap", "sequence": ["heat", "mold"],           "product": "plastic_casing",  "seconds": 2.5, "known": true },
+    { "scrap": "ceramic_scrap", "sequence": ["heat", "press", "mold"],  "product": "ceramic_tile",    "seconds": 4.0, "known": true },
+
+    { "scrap": "copper_scrap",  "sequence": ["press", "heat"],          "product": "charge_cells",    "seconds": 2.5 },
+    { "scrap": "steel_scrap",   "sequence": ["press", "mold"],          "product": "steel_slugs",     "seconds": 2.5 },
+    { "scrap": "plastic_scrap", "sequence": ["fold", "mold"],           "product": "resin_capsules",  "seconds": 2.5 },
+    { "scrap": "ceramic_scrap", "sequence": ["press", "fold"],          "product": "ceramic_charges", "seconds": 3.0 },
+
+    { "scrap": "steel_scrap",   "sequence": ["fold", "press"],          "product": "reinforced_frame","seconds": 4.0 },
+    { "scrap": "copper_scrap",  "sequence": ["mold", "fold"],           "product": "power_coupling",  "seconds": 4.0 },
+    { "scrap": "plastic_scrap", "sequence": ["press", "heat"],          "product": "control_assembly","seconds": 4.0 },
+    { "scrap": "ceramic_scrap", "sequence": ["mold", "heat"],           "product": "thermal_core",    "seconds": 4.5 }
+  ]
+}

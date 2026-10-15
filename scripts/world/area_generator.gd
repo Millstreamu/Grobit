@@ -128,7 +128,8 @@ func generate_facility(run_seed: int) -> void:
 		_populate_room(rooms[i], _enemy_id)
 
 	_spawn_guaranteed_chain(rng)
-	_spawn_component_exchange(rng)
+	# Phase 4 economy swap: the field Component Exchange is retired (it dealt in the old production
+	# machines). Bay-module finds are seeded with the rest of the room content.
 	# The System Terminal lives in the LAIR now (placed by RunController), not out in the run.
 	_build_minimap_edges(connections)
 
@@ -999,48 +1000,16 @@ func _pick_spec(pool: Array, rng: RandomNumberGenerator) -> String:
 
 ## The prototype default: broken Recyclers and Ammo Makers, each specialising randomly
 ## on repair. (Component Makers get added as another category next slice.)
+## Phase 4 economy swap: the old recycler/ammo-maker/component-maker/transport finds are retired — the
+## process lines do all production. What you still find + repair in the field are BAY MODULES (a better
+## weapon, an ammo loader, a support module), all optional (none guaranteed). Repairs cost base products.
 func _default_find_categories() -> Array:
 	return [
-		{
-			"category": "Recycler",
-			"weight": 3,
-			"repair_cost": {"copper": 2},
-			"pool": [
-				{"id": "copper_recycler", "weight": 1},
-				{"id": "steel_recycler", "weight": 1},
-				{"id": "plastic_recycler", "weight": 1},
-				{"id": "ceramic_recycler", "weight": 1},
-			],
-		},
-		{
-			"category": "Ammo Maker",
-			"weight": 1,
-			"no_guarantee": true,  # scarce lucky find — only a Recycler is guaranteed per map
-			"repair_cost": {"copper": 3},
-			"pool": [
-				{"id": "copper_ammo_maker", "weight": 1},
-				{"id": "steel_ammo_maker", "weight": 1},
-				{"id": "plastic_ammo_maker", "weight": 1},
-				{"id": "ceramic_ammo_maker", "weight": 1},
-			],
-		},
-		{
-			"category": "Component Maker",
-			"weight": 2,
-			"no_guarantee": true,  # scarce — finding a Component Maker is what gates climbing a tier
-			"repair_cost": {"copper": 4},
-			"pool": [
-				{"id": "coupling_maker", "weight": 1},
-				{"id": "control_maker", "weight": 1},
-				{"id": "frame_maker", "weight": 1},
-				{"id": "thermal_maker", "weight": 1},
-			],
-		},
 		{
 			"category": "Weapon",
 			"weight": 2,
 			"no_guarantee": true,  # an optional upgrade over the basic gun, never guaranteed
-			"repair_cost": {"copper": 3},
+			"repair_cost": {"copper_sheet": 3},
 			"pool": [
 				{"id": "copper_weapon", "weight": 1},
 				{"id": "steel_weapon", "weight": 1},
@@ -1052,20 +1021,20 @@ func _default_find_categories() -> Array:
 			"category": "Ammo Loader",
 			"weight": 1,
 			"no_guarantee": true,  # a scarce bay module: speeds up every weapon's fire rate
-			"repair_cost": {"copper": 2},
+			"repair_cost": {"copper_sheet": 2},
 			"pool": [
 				{"id": "ammo_loader", "weight": 1},
 			],
 		},
 		{
-			"category": "Transport",
-			"weight": 3,
-			"no_guarantee": true,  # transport is a found-and-repaired item now, never guaranteed
-			"repair_cost": {"copper": 1},
+			"category": "Support Module",
+			"weight": 1,
+			"no_guarantee": true,  # a scarce bay module granting a tactical ability (Phase 5)
+			"repair_cost": {"copper_sheet": 2},
 			"pool": [
-				{"id": "__conveyor", "weight": 3},
-				{"id": "__splitter", "weight": 1},
-				{"id": "__filter", "weight": 1},
+				{"id": "coolant_module", "weight": 1},
+				{"id": "medbay_module", "weight": 1},
+				{"id": "scanner_module", "weight": 1},
 			],
 		},
 	]

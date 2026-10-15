@@ -45,6 +45,15 @@
     "control_unit": { "name": "Control Unit", "icon": "control_unit", "color": "cfd2d6" },
 
     "tech_data": { "name": "Tech Data", "icon": "tech_data", "color": "5aa9e6", "stack": 99 },
-    "food": { "name": "Food", "icon": "food", "color": "7ec850", "stack": 99 }
+    "food": { "name": "Food", "icon": "food", "color": "7ec850", "stack": 99 },
+
+    "_comment_products": "Phase 4 chain products — made by process lines in the workshop (process.json). Kept in each material's colour family.",
+    "steel_plate":   { "name": "Steel Plate",   "icon": "steel_plate",   "color": "b9c2cc", "stack": 20 },
+    "steel_ingot":   { "name": "Steel Ingot",   "icon": "steel_ingot",   "color": "aeb7c2", "stack": 20 },
+    "steel_spring":  { "name": "Steel Spring",  "icon": "steel_spring",  "color": "c6cdd6", "stack": 20 },
+    "copper_sheet":  { "name": "Copper Sheet",  "icon": "copper_sheet",  "color": "c8722e", "stack": 20 },
+    "copper_coil":   { "name": "Copper Coil",   "icon": "copper_coil",   "color": "d6873e", "stack": 20 },
+    "plastic_casing":{ "name": "Plastic Casing","icon": "plastic_casing","color": "3fb6a8", "stack": 20 },
+    "ceramic_tile":  { "name": "Ceramic Tile",  "icon": "ceramic_tile",  "color": "e0d7c0", "stack": 20 }
   }
 }

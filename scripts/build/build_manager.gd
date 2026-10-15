@@ -105,11 +105,42 @@ func _set_active(value: bool) -> void:
 	_active = value
 	_preview.visible = value
 	if value:
+		_refresh_buildables()   # lair stations at base, field buildables while driving
+		_selected = 0
 		_refresh_preview_texture()
 		_reset_cursor()
+		if _station_mode() and MetaState.should_nudge("build"):   # guided first run
+			message.emit("Build mode — [1-N]/[Tab] pick a station, [WASD] move, [Space] place. [Space] on a station removes it.")
 	else:
 		_selector.clear()
 	state_changed.emit(_active)
+
+
+## At the lair (not driving) build mode places LAIR STATIONS; out on a run it places field buildables.
+func _station_mode() -> bool:
+	return not RunState.driving
+
+
+func _refresh_buildables() -> void:
+	if _station_mode():
+		_buildable_ids.assign(GameData.stations.keys())
+	else:
+		_buildable_ids.assign(GameData.buildables.keys())
+
+
+## The def for a buildable/station id (stations win, since ids don't collide).
+func _def(id: String) -> Dictionary:
+	if GameData.stations.has(id):
+		return GameData.stations[id]
+	return GameData.buildables.get(id, {})
+
+
+## The placed lair station occupying `tile`, or null.
+func _station_at_tile(t: Vector2i) -> Node:
+	for s: Node in get_tree().get_nodes_in_group("lair_stations"):
+		if s is Node2D and _world_to_tile((s as Node2D).global_position) == t:
+			return s
+	return null
 
 
 func _select(index: int) -> void:
@@ -120,12 +151,12 @@ func _select(index: int) -> void:
 
 
 func _refresh_preview_texture() -> void:
-	var def: Dictionary = GameData.buildables.get(selected_buildable(), {})
+	var def := _def(selected_buildable())
 	_preview.texture = ContentLibrary.get_icon(String(def.get("icon", selected_buildable())), Vector2i(28, 28), String(def.get("color", "")))
 
 
 func _current_cost() -> Dictionary:
-	return GameData.buildables.get(selected_buildable(), {}).get("cost", {})
+	return _def(selected_buildable()).get("cost", {})
 
 
 func _tile_center(tile_coord: Vector2i) -> Vector2:
@@ -193,22 +224,43 @@ func _is_valid(pos: Vector2) -> bool:
 
 func _try_place(pos: Vector2) -> void:
 	var id := selected_buildable()
+	if id == "":
+		return
+	var is_station := GameData.stations.has(id)
+	# Station mode: pressing place on a tile that already holds a station REMOVES it (move = remove +
+	# rebuild). No refund; free stations rebuild free.
+	if is_station:
+		var existing := _station_at_tile(_cursor_tile)
+		if existing != null:
+			var et := _world_to_tile((existing as Node2D).global_position)
+			MetaState.remove_lair_station_at(et.x, et.y)
+			var rn := String(_def(String(existing.get("station_type"))).get("name", "station"))
+			existing.queue_free()
+			message.emit("Removed %s." % rn)
+			return
 	if not _is_valid(pos):
 		message.emit("Can't build there.")
 		return
 	var cost := _current_cost()
 	if not RunState.spend(cost):
-		message.emit("Not enough resources for %s." % GameData.buildables.get(id, {}).get("name", id))
+		message.emit("Not enough resources for %s." % _def(id).get("name", id))
 		return
 	var node := _instantiate_buildable(id)
 	if node == null:
 		return
 	node.global_position = pos
 	get_parent().add_child(node)
-	message.emit("Built %s." % GameData.buildables.get(id, {}).get("name", id))
+	if is_station:
+		var t := _world_to_tile(pos)
+		MetaState.add_lair_station(id, t.x, t.y)   # persist the new station in the lair layout
+	message.emit("Built %s." % _def(id).get("name", id))
 
 
 func _instantiate_buildable(id: String) -> Node2D:
+	if GameData.stations.has(id):
+		var station := LairStation.new()
+		station.station_type = id
+		return station
 	match id:
 		"respawn_beacon":
 			var beacon := RespawnBeacon.new()

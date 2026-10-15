@@ -92,11 +92,12 @@ func _ready() -> void:
 	MetaState.unlocked.append("tools_t2")  # higher tool tiers are Tech-Data unlocks now
 	MetaState.unlocked.append("tools_t3")
 	var who := String(MetaState.colony_names()[0])
-	_ck(MetaState.upgrade_tool_cost(who) == {"steel": 3}, "upgrading a tier-1 tool costs steel")
+	RunState.add("steel_plate", 3)  # the tool ladder is paid in base chain products now (Phase 4)
+	_ck(MetaState.upgrade_tool_cost(who) == {"steel_plate": 3}, "upgrading a tier-1 tool costs steel plate")
 	RunState.spend(MetaState.upgrade_tool_cost(who))
 	MetaState.set_goblin_tool(who, MetaState.tool_id_for_tier(2))
 	_ck(MetaState.goblin_tool_tier(who) == 2, "the goblin's tool is now tier 2")
-	_ck(MetaState.upgrade_tool_cost(who) == {"copper": 3}, "the next upgrade now costs copper (the ladder)")
+	_ck(MetaState.upgrade_tool_cost(who) == {"copper_sheet": 3}, "the next upgrade now costs copper sheet (the ladder)")
 
 	MetaState.seed_colony(3)
 	MetaState.tools_found.clear()

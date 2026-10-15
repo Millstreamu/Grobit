@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Grobit"
-run/main_scene="res://scenes/world/run.tscn"
+run/main_scene="res://scenes/ui/title.tscn"
 config/features=PackedStringArray("4.4")
 
 [autoload]

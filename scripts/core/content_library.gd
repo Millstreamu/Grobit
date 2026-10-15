@@ -9,6 +9,7 @@ extends Node
 # Atlases are merged in priority order — earlier paths win on id conflicts, so a
 # newer/better sprite sheet listed first overrides the same id in older sheets.
 const ATLAS_PATHS := [
+	"res://grobit-atlas.json",  # hand-authored art (top level) — highest priority, overrides the old sheets
 	"res://content/atlases/prototype/grobit_atlas.json",
 	"res://content/atlases/prototype/prototype_atlas.json",
 ]

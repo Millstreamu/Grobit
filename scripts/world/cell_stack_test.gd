@@ -38,18 +38,6 @@ func _ready() -> void:
 	_ck(r.remove_resource("charge_cells", 3) == 3, "remove_resource drains 3 from the stack")
 	_ck(int(r.resource_counts().get("charge_cells", 0)) == 2, "2 left after draining")
 
-	# A machine stacks its output into one cell across crafts.
-	var a := FactoryGrid.new(6, 6)
-	var ai := a.place_machine_layout("copper_ammo_maker", Vector2i(3, 3), [Vector2i(-1, 0), Vector2i(0, -1)], [Vector2i(1, 0)], [], [])
-	var ins: Array = a.input_positions(a.machines[ai])
-	var outp: Vector2i = a.output_positions(a.machines[ai])[0]
-	for _cycle in 2:
-		a.set_cell(ins[0], {"kind": "resource", "id": "copper", "count": 1})
-		a.set_cell(ins[1], {"kind": "resource", "id": "copper", "count": 1})
-		for _t in 3:
-			a.tick(2.5)
-	_ck(a.cell_count(a.get_cell(outp)) == 2, "a machine stacks its output into one cell")
-
 	if fail == 0:
 		print("CELL_STACK_TEST: ALL PASS")
 	else:

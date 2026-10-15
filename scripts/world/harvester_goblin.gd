@@ -62,6 +62,17 @@ func health() -> int:
 	return _hp
 
 
+## True if this goblin has taken damage and could use a Medbay heal.
+func needs_heal() -> bool:
+	return _hp < MAX_HP
+
+
+## Restores up to `amount` HP (capped at MAX_HP) — the Medbay module's Heal Goblins ability.
+func heal(amount: int) -> void:
+	_hp = mini(_hp + maxi(amount, 0), MAX_HP)
+	_flash = 0.12
+
+
 ## A besieger hit this goblin. Permadeath: at 0 HP it's lost for good (any repaired machine it was
 ## hauling dies with it — it never reached the bot).
 func take_damage(amount: int) -> void:

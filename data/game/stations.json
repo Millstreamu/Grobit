@@ -1,0 +1,10 @@
+{
+  "_comment": "Phase 1 buildable lair + Phase 4 economy swap. Each station is a placeable InteractableObject (LairStation) built in the lair with build mode ([B]); interacting ([F]) opens its focused panel ('panel' routes to the HUD opener: process/goblins/upgrades/missions/fabricator). 'free':true + no cost = pre-placed on a fresh lair and free to (re)build; the rest cost base chain products. The old recycler Workshop + Component Exchange were retired with the economy swap — the Process Line is now the free, pre-placed production station. Icons fall back to a coloured square until art lands.",
+  "stations": {
+    "line":       { "name": "Process Line",        "icon": "station_line",      "color": "6ad0e0", "panel": "process",    "free": true, "cost": {},                     "desc": "The production floor — chain scrap into products." },
+    "missions":   { "name": "Mission Board",       "icon": "station_missions",  "color": "5aa9e6", "panel": "missions",   "free": true, "cost": {},                     "desc": "Colony quests and the lair-restoration goal." },
+    "quarters":   { "name": "Goblin Quarters",     "icon": "station_quarters",  "color": "7ec850", "panel": "goblins",    "cost": { "steel_plate": 4 },                     "desc": "Recruit goblins, equip and upgrade their tools." },
+    "upgrades":   { "name": "Upgrade Bench",       "icon": "station_upgrades",  "color": "b48be2", "panel": "upgrades",   "cost": { "steel_plate": 3, "copper_sheet": 3 },  "desc": "Spend Tech Data + products on permanent upgrades." },
+    "fabricator": { "name": "Fabricator",          "icon": "fabricator",        "color": "f5d56a", "panel": "fabricator", "cost": { "copper_sheet": 3 },                    "desc": "Craft support modules." }
+  }
+}

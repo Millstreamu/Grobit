@@ -26,6 +26,11 @@ var factory_blob := ""
 ## blob format as factory_blob. Empty means an empty bay.
 var bay_blob := ""
 
+## The WORKSHOP PROCESS LINE layout (Phase 4 chains), carried between runs — `var_to_str` of
+## ProcessGrid.to_data(). Empty means "no line laid out yet". Stored as a string because the layout
+## holds Vector2i (ports/positions), which JSON can't represent.
+var process_blob := ""
+
 ## Persistent CARGO HOLD expansion — extra rows bought at the terminal (Dredge "bigger hold").
 var cargo_rows_bonus := 0
 const CARGO_BONUS_MAX := 4
@@ -35,10 +40,10 @@ func can_expand_cargo() -> bool:
 	return cargo_rows_bonus < CARGO_BONUS_MAX
 
 
-## Refined materials to add another row of cargo hold (climbs each time). Paid in steel + copper.
+## Chain products to add another row of cargo hold (climbs each time). Paid in steel plate + copper sheet.
 func expand_cargo_cost() -> Dictionary:
 	var n := cargo_rows_bonus + 1
-	return {"steel": 5 * n, "copper": 3 * n}
+	return {"steel_plate": 5 * n, "copper_sheet": 3 * n}
 
 
 ## Spends refined materials to enlarge the cargo hold one row. Returns success.
@@ -124,15 +129,121 @@ const TOOLS := {
 	"ceramic_saw": {"name": "Ceramic Saw", "tier": 4},
 }
 const STARTER_TOOL := "scrap_claw"
-## Refined material per tier (recycler output). UPGRADING a tool to the next tier costs the tool's
-## CURRENT-tier material — a self-gating ladder fed by what the colony brings home + refines.
-const TIER_MATERIAL := ["steel", "copper", "plastic", "ceramic"]
+## Base chain product per tier (the process-line output that replaced the recycler material).
+## UPGRADING a tool to the next tier costs the CURRENT tier's base product — a self-gating ladder fed
+## by what the colony brings home + refines on the process lines.
+const TIER_MATERIAL := ["steel_plate", "copper_sheet", "plastic_casing", "ceramic_tile"]
 const UPGRADE_TOOL_AMOUNT := 3
+## Maps a machine's material FAMILY (still used for tier gating) to its base chain product (for costs).
+const MATERIAL_PRODUCT := {"steel": "steel_plate", "copper": "copper_sheet", "plastic": "plastic_casing", "ceramic": "ceramic_tile"}
 var tools_found: Array = []   # tool ids found but not yet equipped to a goblin (the swap pool)
 
 ## Colony quests (see data/game/quests.json): progress is computed live from this state; a finished
 ## quest is CLAIMED once for its reward. `quests_claimed` holds the ids already claimed (persisted).
 var quests_claimed: Array = []
+
+## Phase 4 recipe book (hybrid): product ids of process-chain recipes DISCOVERED by making them. Recipes
+## flagged `known:true` in process.json are known from the start (not logged here); the rest reveal in
+## the book the first time a chain produces them. Persisted across runs.
+var discovered_recipes: Array = []
+
+## Phase 6 cold-open / onboarding (persisted). `first_run_done` flips on the first successful return and
+## stops the guided nudges; `seen_nudges` are the one-time contextual hint ids already shown; when
+## `debug_pending` is set (via Debug Lair) RunController bootstraps a fully-stocked test lair on boot.
+var first_run_done := false
+var seen_nudges: Array = []
+var debug_pending := false
+
+
+## True if this contextual nudge should fire now (first run, not yet seen). Marks it seen + saves.
+func should_nudge(id: String) -> bool:
+	if first_run_done or seen_nudges.has(id):
+		return false
+	seen_nudges.append(id)
+	save_game()
+	return true
+
+
+## Marks the first run complete (called on the first non-lost return) so the guide goes quiet.
+func mark_first_run_done() -> void:
+	if first_run_done:
+		return
+	first_run_done = true
+	save_game()
+
+
+## NEW GAME — wipe every persistent field back to a fresh colony and save. (Title screen → New Game.)
+func reset_new_game() -> void:
+	unlocked.clear()
+	mars_delivered.clear()
+	machines_unlocked.clear()
+	factory_blob = ""
+	bay_blob = ""
+	process_blob = ""
+	cargo_rows_bonus = 0
+	machine_levels.clear()
+	machine_storage.clear()
+	machine_instances.clear()
+	lair_cells.clear()
+	lair_grid.clear()
+	lair_stations.clear()
+	lair_needs.clear()
+	beacon_sent = false
+	tools_found.clear()
+	quests_claimed.clear()
+	discovered_recipes.clear()
+	first_run_done = false
+	seen_nudges.clear()
+	debug_pending = false
+	roster.clear()
+	fallen.clear()
+	colony = 3
+	ensure_roster()
+	save_game()
+
+
+## DEBUG LAIR — a fresh game pre-stocked for testing: a bigger colony, a couple of techs unlocked, and a
+## flag telling RunController to place every station + drop a materials bundle on the next boot. Nudges
+## are suppressed. (Title screen → Debug Lair.)
+func start_debug_lair() -> void:
+	reset_new_game()
+	seed_colony(4)
+	for tid: String in ["repair_t2", "tools_t2"]:
+		if GameData.tech.has(tid) and not unlocked.has(tid):
+			unlocked.append(tid)
+	debug_pending = true
+	first_run_done = true   # skip the guided nudges when testing
+	save_game()
+
+
+## True if the recipe for `product` is in the book: a starter (`known:true`) or already discovered.
+func is_recipe_known(product: String) -> bool:
+	if discovered_recipes.has(product):
+		return true
+	for r: Dictionary in GameData.process_recipes:
+		if String(r.get("product", "")) == product:
+			return bool(r.get("known", false))
+	return false
+
+
+## Logs a recipe the first time it's made (ignored if already known/discovered). Returns true if newly
+## discovered (worth a "New recipe!" nudge).
+func discover_recipe(product: String) -> bool:
+	if product == "" or is_recipe_known(product):
+		return false
+	discovered_recipes.append(product)
+	save_game()
+	changed.emit()
+	return true
+
+
+## Every recipe currently in the book (starter-known + discovered), in process.json order — for the UI.
+func known_recipes() -> Array:
+	var out: Array = []
+	for r: Dictionary in GameData.process_recipes:
+		if is_recipe_known(String(r.get("product", ""))):
+			out.append(r)
+	return out
 
 
 ## Live progress toward a quest's goal (compared against goal.target). Pure read of current state.
@@ -153,6 +264,10 @@ func quest_current(goal: Dictionary) -> int:
 			return machine_level(String(goal.get("key", "")))
 		"tech":
 			return 1 if has_tech(String(goal.get("key", ""))) else 0
+		"stations":
+			return lair_stations.size()      # Phase 6 intro quest: build out the lair
+		"recipes":
+			return discovered_recipes.size() # Phase 6 intro quest: make/discover a product
 	return 0
 
 
@@ -417,9 +532,35 @@ func send_beacon() -> void:
 var lair_cells: Array = []
 var lair_grid: Array = []
 
+## Phase 1 BUILDABLE LAIR layout — the stations the player has placed, as [{type, x, y}] in tile
+## coords (JSON-native, no Vector2i). Empty on a brand-new lair; RunController seeds the free defaults
+## (Workshop + Mission Board) the first time. Persisted; build mode adds/removes entries.
+var lair_stations: Array = []
+
 
 func has_lair() -> bool:
 	return not lair_cells.is_empty()
+
+
+func has_lair_stations() -> bool:
+	return not lair_stations.is_empty()
+
+
+## Records a placed station (tile coords) and saves. Call from build mode / the default seed.
+func add_lair_station(type: String, tx: int, ty: int) -> void:
+	lair_stations.append({"type": type, "x": tx, "y": ty})
+	save_game()
+
+
+## Removes the station at the given tile (if any) and saves. Returns true if one was removed.
+func remove_lair_station_at(tx: int, ty: int) -> bool:
+	for i in lair_stations.size():
+		var s: Dictionary = lair_stations[i]
+		if int(s.get("x", -9999)) == tx and int(s.get("y", -9999)) == ty:
+			lair_stations.remove_at(i)
+			save_game()
+			return true
+	return false
 
 
 ## The saved lair footprint for a `w`×`h` cell grid, or [] if none is stored for that size.
@@ -463,10 +604,9 @@ func _machine_material(def_id: String) -> String:
 	return ""
 
 
-## The refined material a machine's upgrades are paid in (its material, or steel if family-less).
+## The base chain PRODUCT a machine's upgrades are paid in (its family's product, else steel plate).
 func _upgrade_material(def_id: String) -> String:
-	var mat := _machine_material(def_id)
-	return mat if mat != "" else "steel"
+	return String(MATERIAL_PRODUCT.get(_machine_material(def_id), "steel_plate"))
 
 
 ## Spends refined materials (from the run inventory) to raise a machine type's permanent level.
@@ -555,6 +695,24 @@ func load_bay() -> FactoryGrid:
 		return null
 	var data: Variant = str_to_var(bay_blob)
 	return FactoryGrid.from_data(data) if data is Dictionary else null
+
+
+func has_process_line() -> bool:
+	return process_blob != ""
+
+
+## Persists the workshop process line (called when a run ends).
+func save_process(grid: ProcessGrid) -> void:
+	process_blob = var_to_str(grid.to_data()) if grid != null else ""
+	save_game()
+
+
+## Rebuilds the persisted process line, or null if there isn't one.
+func load_process() -> ProcessGrid:
+	if process_blob == "":
+		return null
+	var data: Variant = str_to_var(process_blob)
+	return ProcessGrid.from_data(data) if data is Dictionary else null
 
 
 ## Persists the machine/transport storage (call after repairs or placements change it).
@@ -697,10 +855,12 @@ func save_game() -> void:
 		"machines_unlocked": machines_unlocked,
 		"factory": factory_blob,
 		"bay": bay_blob,
+		"process": process_blob,
 		"cargo_rows_bonus": cargo_rows_bonus,
 		"machine_levels": machine_levels,
 		"lair_cells": lair_cells,
 		"lair_grid": lair_grid,
+		"lair_stations": lair_stations,
 		"machine_storage": machine_storage,
 		"machine_instances": var_to_str(machine_instances),
 		"lair_needs": lair_needs,
@@ -710,6 +870,9 @@ func save_game() -> void:
 		"fallen": fallen,
 		"tools_found": tools_found,
 		"quests_claimed": quests_claimed,
+		"discovered_recipes": discovered_recipes,
+		"first_run_done": first_run_done,
+		"seen_nudges": seen_nudges,
 	}, "  "))
 
 
@@ -736,6 +899,7 @@ func load_game() -> void:
 		machines_unlocked.append(String(id))
 	factory_blob = String(data.get("factory", ""))
 	bay_blob = String(data.get("bay", ""))
+	process_blob = String(data.get("process", ""))
 	cargo_rows_bonus = clampi(int(data.get("cargo_rows_bonus", 0)), 0, CARGO_BONUS_MAX)
 	machine_levels.clear()
 	var saved_levels: Dictionary = data.get("machine_levels", {})
@@ -747,6 +911,10 @@ func load_game() -> void:
 	lair_grid.clear()
 	for d: Variant in data.get("lair_grid", []):
 		lair_grid.append(int(d))
+	lair_stations.clear()
+	for s: Variant in data.get("lair_stations", []):
+		if s is Dictionary and GameData.stations.has(String(s.get("type", ""))):
+			lair_stations.append({"type": String(s.get("type", "")), "x": int(s.get("x", 0)), "y": int(s.get("y", 0))})
 	machine_storage.clear()
 	var saved_storage: Dictionary = data.get("machine_storage", {})
 	for id: Variant in saved_storage:
@@ -778,6 +946,13 @@ func load_game() -> void:
 	for tid: Variant in data.get("tools_found", []):
 		if TOOLS.has(String(tid)):
 			tools_found.append(String(tid))
+	discovered_recipes.clear()
+	for rid: Variant in data.get("discovered_recipes", []):
+		discovered_recipes.append(String(rid))
+	first_run_done = bool(data.get("first_run_done", false))
+	seen_nudges.clear()
+	for nid: Variant in data.get("seen_nudges", []):
+		seen_nudges.append(String(nid))
 	quests_claimed.clear()
 	for qid: Variant in data.get("quests_claimed", []):
 		quests_claimed.append(String(qid))

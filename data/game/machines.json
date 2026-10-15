@@ -1,115 +1,15 @@
 {
-  "_comment": "Grid machines for the inventory-factory. Offsets are [x,y] relative to the core cell. 'inputs' = cells read (set-based: a recipe matches when its needs are present across the input cells). 'outputs' = cells written (a recipe's produces are distributed across free output cells). Recipes live in recipes.json keyed by machine. 'cost' is spent from the factory on a NEW build (placing from your machine stock is free). 'locked' machines unlock when 'unlock_requires' (cumulative Mars deliveries) is met. 'world:true' would mark a room/utility station (none here — those are separate interactable scripts).",
+  "_comment": "Phase 4 economy swap: the old recycler/ammo-maker/component-maker/junk factory is RETIRED — production is the process lines (process.json). What remains here are BAY MODULES carried on the scrapbot: weapons (fire in combat, fed chain-made ammo), the Ammo Loader (fire-rate), and the Phase-5 support modules (tactical abilities). 'bay':true = a shaped loadout piece (no in/out ports). 'cost' is paid in base chain products when crafted/built.",
   "machines": {
-    "scrap_recycler": {
-      "name": "Scrap Recycler",
-      "icon": "scrap_recycler",
-      "color": "9aa7b3",
-      "inputs": [[-1, 0]],
-      "outputs": [[1, 0], [1, 1]],
-      "cost": { "scrap_metal": 2 }
-    },
+    "copper_weapon":  { "name": "Copper Blaster",  "icon": "weapon_copper",  "color": "c8722e", "bay": true, "core_size": 2, "weapon": true, "family": "copper",  "ammo": "charge_cells",    "damage": 2, "cooldown": 0.25, "projectile_speed": 460, "cost": {"copper_sheet": 3}, "_note": "A BAY module (just a shape — no in/out ports). Draws from the bot's loaded ammo (a chain product now). See PlayerCombat / FactoryGrid.weapon_stats." },
+    "steel_weapon":   { "name": "Steel Cannon",    "icon": "weapon_steel",   "color": "b9c2cc", "bay": true, "core_size": 2, "weapon": true, "family": "steel",   "ammo": "steel_slugs",     "damage": 6, "cooldown": 0.70, "projectile_speed": 360, "cost": {"copper_sheet": 3} },
+    "plastic_weapon": { "name": "Resin Repeater",  "icon": "weapon_plastic", "color": "3fb6a8", "bay": true, "core_size": 2, "weapon": true, "family": "plastic", "ammo": "resin_capsules",  "damage": 2, "cooldown": 0.45, "projectile_speed": 410, "pellets": 3, "spread_deg": 22, "cost": {"copper_sheet": 3}, "_note": "Spread: one trigger-pull fires 3 pellets in a fan (spread_deg)." },
+    "ceramic_weapon": { "name": "Ceramic Lance",   "icon": "weapon_ceramic", "color": "e0d7c0", "bay": true, "core_size": 2, "weapon": true, "family": "ceramic", "ammo": "ceramic_charges", "damage": 4, "cooldown": 0.52, "projectile_speed": 420, "pierce": 2, "cost": {"copper_sheet": 3}, "_note": "Pierce: the shot passes through up to 2 enemies (hits 3 in a line)." },
 
-    "copper_recycler": { "name": "Copper Recycler", "icon": "recycler_copper", "color": "c8722e", "inputs": [[-1, 0]], "outputs": [[1, 0]], "_note": "Broken Recyclers repair-roll into one of the 4 material recyclers (machine_finds). Data-driven; multi-material/upgradeable = more defs later." },
-    "steel_recycler": { "name": "Steel Recycler", "icon": "recycler_steel", "color": "b9c2cc", "inputs": [[-1, 0]], "outputs": [[1, 0]] },
-    "plastic_recycler": { "name": "Plastic Recycler", "icon": "recycler_plastic", "color": "3fb6a8", "inputs": [[-1, 0]], "outputs": [[1, 0]] },
-    "ceramic_recycler": { "name": "Ceramic Recycler", "icon": "recycler_ceramic", "color": "e0d7c0", "inputs": [[-1, 0]], "outputs": [[1, 0]] },
+    "ammo_loader": { "name": "Ammo Loader", "icon": "ammo_loader", "color": "ffcf6a", "bay": true, "module": true, "core_size": 1, "fire_rate": 0.35, "cost": {"copper_sheet": 2}, "_note": "A BAY module (shape only, no ports). Each one speeds up every weapon's fire rate by its fire_rate (see FactoryGrid.fire_rate_multiplier). Stack them for faster shooting." },
 
-    "copper_ammo_maker": { "name": "Copper Ammo Maker", "icon": "ammo_maker_copper", "color": "e8a13a", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]], "_note": "Broken Ammo Makers repair-roll into one of these 4 (one per family). Recipes are data-driven and level-gated (see recipes.json 'level')." },
-    "steel_ammo_maker": { "name": "Steel Ammo Maker", "icon": "ammo_maker_steel", "color": "cfd6dd", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
-    "plastic_ammo_maker": { "name": "Plastic Ammo Maker", "icon": "ammo_maker_plastic", "color": "56d3c4", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
-    "ceramic_ammo_maker": { "name": "Ceramic Ammo Maker", "icon": "ammo_maker_ceramic", "color": "efe6cf", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
-
-    "coupling_maker": { "name": "Coupling Maker", "icon": "comp_maker_coupling", "color": "d98f3a", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]], "_note": "Broken Component Makers repair-roll into one of these. Each combines two base materials into a component (machine type decides the output, not a universal table)." },
-    "control_maker": { "name": "Control Maker", "icon": "comp_maker_control", "color": "7fc8a0", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
-    "frame_maker": { "name": "Frame Maker", "icon": "comp_maker_frame", "color": "9aa6b2", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
-    "thermal_maker": { "name": "Thermal Maker", "icon": "comp_maker_thermal", "color": "e06a6a", "inputs": [[-1, 0], [0, -1]], "outputs": [[1, 0]] },
-
-    "copper_weapon":  { "name": "Copper Blaster",  "icon": "weapon_copper",  "color": "c8722e", "bay": true, "core_size": 2, "weapon": true, "family": "copper",  "ammo": "charge_cells",    "damage": 2, "cooldown": 0.25, "projectile_speed": 460, "cost": {"copper": 3}, "_note": "A BAY module (just a shape — no in/out ports). Draws from the bot's loaded ammo (made in the workshop). See PlayerCombat / FactoryGrid.weapon_stats." },
-    "steel_weapon":   { "name": "Steel Cannon",    "icon": "weapon_steel",   "color": "b9c2cc", "bay": true, "core_size": 2, "weapon": true, "family": "steel",   "ammo": "steel_slugs",     "damage": 6, "cooldown": 0.70, "projectile_speed": 360, "cost": {"copper": 3} },
-    "plastic_weapon": { "name": "Resin Repeater",  "icon": "weapon_plastic", "color": "3fb6a8", "bay": true, "core_size": 2, "weapon": true, "family": "plastic", "ammo": "resin_capsules",  "damage": 2, "cooldown": 0.45, "projectile_speed": 410, "pellets": 3, "spread_deg": 22, "cost": {"copper": 3}, "_note": "Spread: one trigger-pull fires 3 pellets in a fan (spread_deg)." },
-    "ceramic_weapon": { "name": "Ceramic Lance",   "icon": "weapon_ceramic", "color": "e0d7c0", "bay": true, "core_size": 2, "weapon": true, "family": "ceramic", "ammo": "ceramic_charges", "damage": 4, "cooldown": 0.52, "projectile_speed": 420, "pierce": 2, "cost": {"copper": 3}, "_note": "Pierce: the shot passes through up to 2 enemies (hits 3 in a line)." },
-
-    "ammo_loader": { "name": "Ammo Loader", "icon": "ammo_loader", "color": "ffcf6a", "bay": true, "module": true, "core_size": 1, "fire_rate": 0.35, "cost": {"copper": 2}, "_note": "A BAY module (shape only, no ports). Each one speeds up every weapon's fire rate by its fire_rate (see FactoryGrid.fire_rate_multiplier). Stack them for faster shooting." },
-
-
-    "grinder": {
-      "name": "Grinder",
-      "icon": "grinder",
-      "color": "7a6f5d",
-      "inputs": [[-1, 0]],
-      "outputs": [[1, 0]],
-      "cost": { "copper": 3 }
-    },
-    "separator": {
-      "name": "Separator",
-      "icon": "separator",
-      "color": "6f8f9a",
-      "inputs": [[-1, 0]],
-      "outputs": [[1, 0], [1, 1], [1, -1]],
-      "cost": { "scrap_metal": 2 }
-    },
-    "smelter": {
-      "name": "Smelter",
-      "icon": "smelter",
-      "color": "c86b3a",
-      "inputs": [[-1, 0]],
-      "outputs": [[1, 0]],
-      "cost": { "copper": 3 }
-    },
-    "press": {
-      "name": "Press",
-      "icon": "press",
-      "color": "8a8f97",
-      "inputs": [[-1, 0]],
-      "outputs": [[1, 0]],
-      "cost": { "copper": 3 }
-    },
-    "refiner": {
-      "name": "Refiner",
-      "icon": "refiner",
-      "color": "e08a3a",
-      "inputs": [[-1, 0]],
-      "outputs": [[1, 0]],
-      "cost": { "copper": 3 }
-    },
-    "circuit_printer": {
-      "name": "Circuit Printer",
-      "icon": "circuit_printer",
-      "color": "2f8f6f",
-      "inputs": [[-1, 0], [0, -1]],
-      "outputs": [[1, 0]],
-      "cost": { "scrap_metal": 4 }
-    },
-    "constructor": {
-      "name": "Constructor",
-      "icon": "constructor",
-      "color": "b0b6bd",
-      "inputs": [[-1, 0], [0, -1], [0, 1]],
-      "outputs": [[1, 0]],
-      "cost": { "metal_plate": 2 },
-      "locked": true,
-      "unlock_requires": { "circuit_board": 3 }
-    },
-    "assembler": {
-      "name": "Assembler",
-      "icon": "assembler",
-      "color": "8f96a0",
-      "inputs": [[-1, 0], [0, -1], [0, 1]],
-      "outputs": [[1, 0]],
-      "cost": { "metal_plate": 2 },
-      "locked": true,
-      "unlock_requires": { "control_unit": 2 }
-    },
-    "storage_cache": {
-      "name": "Storage Cache",
-      "icon": "storage_cache",
-      "color": "6f9bd1",
-      "inputs": [[-1, 0]],
-      "outputs": [],
-      "capacity": 16,
-      "cost": { "copper": 3 },
-      "_note": "A sink: items fed into its input stack up to `capacity` of ONE type. Load a full cache at the retrieval pad to ship the whole stack in one cartridge slot."
-    }
+    "coolant_module": { "name": "Coolant Vent", "icon": "module_coolant", "color": "5ad1e0", "bay": true, "module": true, "core_size": 1, "cost": {"copper_sheet": 2, "plastic_casing": 1}, "ability": { "id": "reduce_heat", "name": "Vent Heat", "glyph": "*", "amount": 10, "charges": 2, "field_only": false }, "_note": "Phase 5 SUPPORT module: an 'ability' {id,name,glyph,amount?,charges,field_only} grants a tactical, non-twitch power used from the Scrapbot menu ([1]-[3]). Charges are per-run (refilled at the lair); stacking the same module sums charges. See RunState.installed_abilities / ScrapbotPanel. Craftable at the Fabricator / found in the field." },
+    "medbay_module": { "name": "Medbay", "icon": "module_medbay", "color": "6ad38a", "bay": true, "module": true, "core_size": 1, "cost": {"plastic_casing": 2, "steel_plate": 1}, "ability": { "id": "heal_goblins", "name": "Heal Goblins", "glyph": "+", "amount": 2, "charges": 2, "field_only": true } },
+    "scanner_module": { "name": "Scanner", "icon": "module_scan", "color": "e0c75a", "bay": true, "module": true, "core_size": 1, "cost": {"copper_sheet": 1, "ceramic_tile": 1}, "ability": { "id": "scan", "name": "Scan Room", "glyph": "o", "charges": 3, "field_only": true } }
   }
 }

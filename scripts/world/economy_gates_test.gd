@@ -37,20 +37,20 @@ func _ready() -> void:
 	_ck(MetaState.best_available_tool() == "copper_cutter", "the tier-2 tool becomes usable")
 	_ck(not MetaState.upgrade_tool_cost(who).is_empty(), "tool upgrade to tier 2 is now allowed")
 
-	# Everyday economy uses Food + materials, never Tech Data.
+	# Everyday economy uses Food + CHAIN PRODUCTS (Phase 4 economy swap), never Tech Data.
 	_ck(MetaState.recruit_cost().has("food"), "recruiting costs Food")
-	_ck(MetaState.machine_upgrade_cost("copper_recycler").has("copper"), "machine upgrades cost the machine's material")
-	_ck(MetaState.expand_cargo_cost().has("steel"), "cargo expansion costs refined materials")
+	_ck(MetaState.machine_upgrade_cost("copper_recycler").has("copper_sheet"), "machine upgrades cost the family's base product")
+	_ck(MetaState.expand_cargo_cost().has("steel_plate"), "cargo expansion costs base products")
 
-	# Spending actually draws from the inventory: recruit spends Food, upgrade spends materials.
+	# Spending actually draws from the inventory: recruit spends Food, upgrade spends products.
 	MetaState.seed_colony(2)
 	var rc := int(MetaState.recruit_cost().get("food", 0))
 	RunState.add("food", rc)
 	_ck(not MetaState.recruit().is_empty() and RunState.get_quantity("food") == 0, "recruiting draws Food from the inventory")
-	RunState.add("copper", 10)
+	RunState.add("copper_sheet", 10)
 	MetaState.machine_levels = {}
-	var up := int(MetaState.machine_upgrade_cost("copper_recycler").get("copper", 0))
-	_ck(MetaState.upgrade_machine("copper_recycler") and RunState.get_quantity("copper") == 10 - up, "upgrading draws materials from the inventory")
+	var up := int(MetaState.machine_upgrade_cost("copper_recycler").get("copper_sheet", 0))
+	_ck(MetaState.upgrade_machine("copper_recycler") and RunState.get_quantity("copper_sheet") == 10 - up, "upgrading draws products from the inventory")
 
 	MetaState.unlocked.clear()
 	MetaState.machine_levels = {}

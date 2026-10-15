@@ -44,6 +44,14 @@ const BAY_COLS := 6
 const BAY_ROWS := 4
 var bay: FactoryGrid
 
+## The WORKSHOP PROCESS LINE (Phase 4) — the new assembly-chain grid: scrap enters at an intake and
+## is worked verb-by-verb (heat/press/mold/fold) into a product. Runs ONLY at the lair (not driving),
+## ticked by FactoryProcessor. Persists across runs via MetaState.process_blob. Separate from the
+## factory (old recycler economy, still live) and the bay. See scripts/core/process_grid.gd.
+const PROCESS_COLS := 8
+const PROCESS_ROWS := 6
+var process_grid: ProcessGrid
+
 ## The four typed scraps. Goblins haul scrap home and it feeds the inventory from the top-left
 ## (FactoryGrid.deposit_scrap), or into a scrap inserter pinned to that type; an adjacent recycler
 ## pulls it out. What a goblin can scrap is gated by its TOOL's tier, not by the factory.
@@ -100,17 +108,25 @@ const HEAT_BOT_THREAT := 55.0
 const HEAT_FULL_ALERT := 80.0
 var heat := 0.0
 
+## MODULE ABILITIES (Phase 5) — tactical, non-twitch powers granted by installed support bay modules
+## (Coolant/Medbay/Scanner), used from the Scrapbot menu. Each ability has a per-run CHARGE budget
+## (summed across stacked modules); `ability_used` counts how many have been spent this run and resets
+## every run, so charges refill at the lair. See installed_abilities / ability_remaining / use_ability.
+var ability_used: Dictionary = {}
+
+## PER-RUN STATS for the end-of-run summary card (Phase 0.3): scrap hauled home, machines recovered,
+## goblins lost (names → memorial), peak Heat reached, and the recipe book snapshot taken at run start
+## (so the summary can list what was discovered this run). Reset every run in begin_run.
+var run_stats: Dictionary = {}
+
 ## Machine names newly unlocked by the shipment that ended this run (for the summary).
 var last_run_unlocks: Array = []
 
 ## Lair needs filled by THIS run's extraction (need -> amount), for the end-of-run summary.
 var needs_delivered: Dictionary = {}
 
-## The single active ability chosen for this run (Space triggers it), and the set
-## of abilities the player may choose/switch to. Structured so mid-run unlocks can
-## grow `available_abilities` later.
-var equipped_ability := ""
-var available_abilities: Array[String] = []
+# Field abilities were retired (Phase 0.2) — Space shoots now, and tactical abilities will come from
+# bay modules (Phase 5). The old equipped/available-ability tracking was removed.
 
 ## Per-run credit accumulated at the Component Exchange by selling components. Each
 ## full ExchangePanel.MACHINE_COST worth grants a random machine into `machine_stock`.
@@ -149,15 +165,15 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 	deploy_squad = []         # default to deploying the whole colony until you pick a squad
 	ammo = {}                 # the bot carries no ammo until you load it at launch (load_ammo)
 	heat = 0.0                # presence resets to calm at the start of every run
+	ability_used = {}         # module-ability charges refill to full at the lair each run
+	run_stats = {
+		"scrap_hauled": 0,          # typed scrap brought home this run (cargo → inventory on extract)
+		"machines_hauled": 0,       # recovered machines carried home this run
+		"goblins_lost": [],         # names lost in the field this run (→ memorial)
+		"heat_peak": 0.0,           # highest Heat reached this run
+		"recipes_before": MetaState.discovered_recipes.duplicate(),  # book snapshot → diff for discoveries
+	}
 	exchange_machines_granted = 0
-
-	# Ability is chosen at the start of each run. Only "starter" abilities are
-	# available up front; others are unlocked mid-run (e.g. by repairing equipment).
-	equipped_ability = ""
-	available_abilities.clear()
-	for ability_id: String in GameData.abilities:
-		if bool(GameData.abilities[ability_id].get("starter", true)):
-			available_abilities.append(ability_id)
 
 	# Inventory-factory: a bare grid each run (the persistent layout is loaded over it by the
 	# RunController). Harvested scrap feeds the grid from the top-left (or a matching scrap
@@ -165,6 +181,7 @@ func begin_run(new_area_id: String, new_seed: int) -> void:
 	factory = FactoryGrid.new(FACTORY_COLS, FACTORY_ROWS)
 	cargo = CargoHold.new(CARGO_COLS, cargo_rows())  # the bot's hold starts empty each run
 	bay = FactoryGrid.new(BAY_COLS, BAY_ROWS)      # loadout; RunController loads the saved one over this
+	process_grid = ProcessGrid.new(PROCESS_COLS, PROCESS_ROWS)  # bare line; RunController loads the saved one over this
 
 	currency = {}  # no top-bar currencies now — Tech Data is a grid item
 
@@ -296,9 +313,27 @@ func return_ammo() -> void:
 
 # ------------------------------------------------------------------- heat ----
 
-## Raises (or, for the later Reduce-Heat ability, lowers) the run-wide Heat, clamped to [0, HEAT_MAX].
+## Raises (or, for the Reduce-Heat ability, lowers) the run-wide Heat, clamped to [0, HEAT_MAX].
 func add_heat(amount: float) -> void:
 	heat = clampf(heat + amount, 0.0, HEAT_MAX)
+	if heat > float(run_stats.get("heat_peak", 0.0)):
+		run_stats["heat_peak"] = heat
+
+
+## Records a goblin lost in the field this run (for the summary card's memorial line).
+func note_goblin_lost(gob_name: String) -> void:
+	if run_stats.has("goblins_lost"):
+		(run_stats["goblins_lost"] as Array).append(gob_name)
+
+
+## The recipe products newly discovered THIS run (diff of the book against the run-start snapshot).
+func recipes_discovered_this_run() -> Array:
+	var before: Array = run_stats.get("recipes_before", [])
+	var out: Array = []
+	for p: Variant in MetaState.discovered_recipes:
+		if not before.has(p):
+			out.append(String(p))
+	return out
 
 
 func heat_ratio() -> float:
@@ -312,6 +347,55 @@ func heat_tier() -> int:
 	if heat >= HEAT_BOT_THREAT:
 		return HEAT_BOT_THREAT_TIER
 	return HEAT_CALM
+
+
+# -------------------------------------------------------------- abilities ----
+
+## The tactical abilities the installed bay modules currently grant, de-duplicated by id with charges
+## SUMMED across stacked modules. Each entry is the module's `ability` dict (id/name/glyph/amount/
+## field_only) with `charges` = the per-run total. Reads the live bay, so equipping more updates it.
+func installed_abilities() -> Array:
+	var out: Array = []
+	var by_id: Dictionary = {}
+	if bay == null:
+		return out
+	for m: Dictionary in bay.machines:
+		if bool(m.get("removed", false)):
+			continue
+		var ab: Dictionary = GameData.machines.get(String(m.get("def_id", "")), {}).get("ability", {})
+		var id := String(ab.get("id", ""))
+		if id == "":
+			continue
+		if by_id.has(id):
+			var e: Dictionary = by_id[id]
+			e["charges"] = int(e.get("charges", 0)) + int(ab.get("charges", 1))  # same ref as in `out`
+		else:
+			var entry: Dictionary = ab.duplicate()
+			entry["charges"] = int(ab.get("charges", 1))
+			by_id[id] = entry
+			out.append(entry)
+	return out
+
+
+## Total per-run charges for an ability id across installed modules (0 if no module grants it).
+func ability_max(id: String) -> int:
+	for a: Dictionary in installed_abilities():
+		if String(a.get("id", "")) == id:
+			return int(a.get("charges", 0))
+	return 0
+
+
+## Charges left for an ability this run (max minus what's been spent).
+func ability_remaining(id: String) -> int:
+	return maxi(0, ability_max(id) - int(ability_used.get(id, 0)))
+
+
+## Spends one charge of an ability if any remain. Returns false (nothing happens) when out.
+func use_ability(id: String) -> bool:
+	if ability_remaining(id) <= 0:
+		return false
+	ability_used[id] = int(ability_used.get(id, 0)) + 1
+	return true
 
 
 ## Resource cost to place a machine or transport part (paid from the factory). Transport and
@@ -398,22 +482,6 @@ func end_run(new_result: String) -> Dictionary:
 ## True if the factory grid has at least one free cell for an incoming item.
 func has_space() -> bool:
 	return factory != null and factory.has_empty()
-
-
-## Makes an ability choosable this run. Returns false if already available.
-func unlock_ability(ability_id: String) -> bool:
-	if ability_id.is_empty() or available_abilities.has(ability_id):
-		return false
-	available_abilities.append(ability_id)
-	return true
-
-
-## An ability id the player has NOT yet unlocked this run, or "" if none remain.
-func first_locked_ability() -> String:
-	for ability_id: String in GameData.abilities:
-		if not available_abilities.has(ability_id):
-			return ability_id
-	return ""
 
 
 func get_quantity(resource_id: String) -> int:

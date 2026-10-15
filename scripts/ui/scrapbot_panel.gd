@@ -49,6 +49,9 @@ func open() -> void:
 	_opened_frame = Engine.get_process_frames()
 	visible = true
 	get_tree().paused = true
+	var h := get_parent()
+	if h != null and h.has_method("nudge"):   # guided first run
+		h.nudge("scrapbot", "Load your crew (Crew tab) and weapons/modules (bay), then [Enter] to drive out on a run.")
 	queue_redraw()
 
 
@@ -88,6 +91,11 @@ func _handle_input() -> void:
 	_move_cursor()
 	if Input.is_action_just_pressed("attack"):
 		_act_on_cursor()
+	# [1]–[4] fire a module ability (tactical, non-twitch). Works at base and in the field; each
+	# ability gates itself (field-only, charges). The strip shows the number → ability mapping.
+	for i in 4:
+		if Input.is_action_just_pressed("hotbar_%d" % (i + 1)):
+			_use_ability(i)
 
 
 ## Commits the loadout + squad and drives out (the old factory-panel "Accept & launch").
@@ -233,20 +241,29 @@ func _draw_scrapbot() -> void:
 
 
 func _draw_abilities() -> void:
-	draw_string(_font, Vector2(RX + 6, 54), "Abilities", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.9, 0.9, 0.95))
+	var w := PANEL.x - RX - 14
+	draw_string(_font, Vector2(RX + 6, 54), "Abilities  [1–3]", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.9, 0.9, 0.95))
 	var abilities := _abilities()
+	if abilities.is_empty():
+		draw_string(_font, Vector2(RX + 6, 72), "Install support modules", HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.6, 0.62, 0.68))
+		draw_string(_font, Vector2(RX + 6, 88), "(Coolant / Medbay / Scanner)", HORIZONTAL_ALIGNMENT_LEFT, w, 11, Color(0.5, 0.52, 0.58))
+		return
+	var y := 62.0
 	for i in abilities.size():
 		var a: Dictionary = abilities[i]
-		var ix := RX + 6 + i * 44.0
-		var box := Rect2(ix, 62, 40, 40)
-		if bool(a.ready):
-			draw_rect(box, Color(0.12, 0.35, 0.6, 0.5))
-			draw_rect(box, Color(0.4, 0.7, 1.0), false, 1.5)
-		else:
-			draw_rect(box, Color(0.10, 0.10, 0.13))
-			draw_rect(box, Color(0.3, 0.3, 0.36), false, 1.0)
-		draw_string(_font, box.position + Vector2(5, 25), String(a.glyph), HORIZONTAL_ALIGNMENT_LEFT, 32, 16, Color(0.9, 0.95, 1.0) if a.ready else Color(0.45, 0.45, 0.5))
-	draw_string(_font, Vector2(RX + 6, 118), "lit = ready · dim = needs a module", HORIZONTAL_ALIGNMENT_LEFT, PANEL.x - RX - 14, 12, Color(0.6, 0.62, 0.68))
+		var id := String(a.get("id", ""))
+		var remaining := RunState.ability_remaining(id)
+		var field_lock := bool(a.get("field_only", false)) and not RunState.driving
+		var usable := remaining > 0 and not field_lock
+		var col := Color(0.55, 0.9, 1.0) if usable else Color(0.5, 0.52, 0.58)
+		var row := Rect2(RX + 4, y - 1, w, 18)
+		if usable:
+			draw_rect(row, Color(0.12, 0.35, 0.6, 0.25))
+		draw_string(_font, Vector2(RX + 6, y + 13), "%d %s %s" % [i + 1, String(a.get("glyph", "•")), String(a.get("name", id))], HORIZONTAL_ALIGNMENT_LEFT, w - 48, 13, col)
+		var tag := ("field" if field_lock else "%d/%d" % [remaining, RunState.ability_max(id)])
+		draw_string(_font, Vector2(RX + 6, y + 13), tag, HORIZONTAL_ALIGNMENT_RIGHT, w - 6, 12, col)
+		y += 20.0
+	draw_string(_font, Vector2(RX + 6, y + 6), "charges refill at the lair", HORIZONTAL_ALIGNMENT_LEFT, w, 11, Color(0.55, 0.57, 0.63))
 
 
 func _draw_info() -> void:
@@ -423,26 +440,118 @@ func _module_lines(did: String) -> Array:
 		]
 	if float(def.get("fire_rate", 0.0)) > 0.0:
 		return ["speeds up every weapon's fire rate", "+%d%% per Ammo Loader installed" % int(round(float(def.get("fire_rate", 0.0)) * 100.0))]
+	var ab: Dictionary = def.get("ability", {})
+	if not ab.is_empty():
+		var id := String(ab.get("id", ""))
+		var lines: Array = ["grants ability: %s" % String(ab.get("name", id))]
+		match id:
+			"reduce_heat":
+				lines.append("vents %d Heat per use" % int(ab.get("amount", 10)))
+			"heal_goblins":
+				lines.append("heals deployed goblins +%d HP" % int(ab.get("amount", 2)))
+			"scan":
+				lines.append("reveals a nearby room's salvage")
+		lines.append("%d charge(s)/run (use from [1–3]); stack to add more" % int(ab.get("charges", 1)))
+		return lines
 	return ["a bay module"]
 
 
+## The usable abilities, one per distinct installed support module (charges summed across stacks).
 func _abilities() -> Array:
-	var has_weapon := false
-	var has_loader := false
-	for m: Dictionary in RunState.bay.machines:
-		if bool(m.get("removed", false)):
+	return RunState.installed_abilities()
+
+
+## Fires ability #i (0-based) from the strip: checks charges + field-only gating, applies the effect,
+## then spends a charge only if the effect actually did something.
+func _use_ability(i: int) -> void:
+	var list := _abilities()
+	if i < 0 or i >= list.size():
+		return
+	var a: Dictionary = list[i]
+	var id := String(a.get("id", ""))
+	var nm := String(a.get("name", id))
+	if RunState.ability_remaining(id) <= 0:
+		_message = "%s — no charges left this run (refills at the lair)." % nm
+		return
+	if bool(a.get("field_only", false)) and not RunState.driving:
+		_message = "%s only works out on a run." % nm
+		return
+	var summary := _apply_ability(id, a)
+	if summary == "":
+		return  # the effect was a no-op (reason already in _message); no charge spent
+	RunState.use_ability(id)
+	_message = "%s — %s. %d charge(s) left." % [nm, summary, RunState.ability_remaining(id)]
+
+
+## Applies an ability's effect. Returns a short success summary, or "" (with _message set) when it
+## was a no-op so the caller spends no charge.
+func _apply_ability(id: String, a: Dictionary) -> String:
+	match id:
+		"reduce_heat":
+			if RunState.heat <= 0.0:
+				_message = "Heat is already calm — no need to vent."
+				return ""
+			var amt := float(a.get("amount", 10))
+			RunState.add_heat(-amt)
+			return "vented heat to %d" % int(round(RunState.heat))
+		"heal_goblins":
+			var amt := int(a.get("amount", 2))
+			var healed := 0
+			for g: Node in get_tree().get_nodes_in_group("harvester_goblins"):
+				if g.has_method("needs_heal") and g.needs_heal():
+					g.heal(amt)
+					healed += 1
+			if healed == 0:
+				_message = "No wounded goblins deployed."
+				return ""
+			return "healed %d goblin(s)" % healed
+		"scan":
+			return _do_scan()
+	return ""
+
+
+## Scan the nearest un-scanned, un-cleared room and reveal its salvage to the HUD log.
+func _do_scan() -> String:
+	var controller := _find_controller()
+	var gen: Variant = controller.generator if controller != null and "generator" in controller else null
+	if gen == null or not ("rooms" in gen):
+		_message = "Nothing to scan yet — drive out first."
+		return ""
+	var origin := _bot_position()
+	var best: Room = null
+	var best_d := INF
+	for room: Room in gen.rooms:
+		if room == null or room.scanned or room.is_cleared:
 			continue
-		var did := String(m.get("def_id", ""))
-		if bool(GameData.machines.get(did, {}).get("weapon", false)):
-			has_weapon = true
-		if float(GameData.machines.get(did, {}).get("fire_rate", 0.0)) > 0.0:
-			has_loader = true
-	return [
-		{"name": "Auto-turret", "glyph": "T", "ready": has_weapon},
-		{"name": "Fast reload", "glyph": "A", "ready": has_loader},
-		{"name": "EMP burst", "glyph": "E", "ready": false},
-		{"name": "Shield pulse", "glyph": "S", "ready": false},
-	]
+		if room.salvage_loot.is_empty():
+			continue  # scanning is for rooms with guaranteed salvage worth revealing
+		var d := origin.distance_to(room.center())
+		if d < best_d:
+			best_d = d
+			best = room
+	if best == null:
+		_message = "No un-scanned salvage rooms in range."
+		return ""
+	best.scanned = true
+	var summary := best.loot_summary()
+	var parent := get_parent()
+	if parent != null and parent.has_method("log_message"):
+		parent.log_message("Scan: a room ahead holds %s." % summary)
+	return "found %s" % summary
+
+
+func _find_controller() -> Node:
+	for c: Node in get_tree().get_nodes_in_group("run_controller"):
+		return c
+	return null
+
+
+## The planted bot's position (the Scan origin), or zero if it can't be found.
+func _bot_position() -> Vector2:
+	for p: Node in get_tree().get_nodes_in_group("player"):
+		if p is Node2D:
+			return (p as Node2D).global_position
+	return Vector2.ZERO
 
 
 func _is_bay_module(did: String) -> bool:

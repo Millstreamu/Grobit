@@ -18,6 +18,9 @@ var generation: Dictionary = {}
 var areas: Dictionary = {}
 var families: Dictionary = {}  # material family -> {name, letter, ammo, ammo_maker}
 var quests: Array = []  # colony quests shown on the lair terminal's Tasks tab (see quests.json)
+var stations: Dictionary = {}  # Phase 1: buildable lair stations (see stations.json)
+var process_verbs: Dictionary = {}  # Phase 4: process-machine verbs (heat/press/mold/fold) → def
+var process_recipes: Array = []     # Phase 4: {scrap, sequence:[verbs], product, seconds, known?}
 
 
 func _ready() -> void:
@@ -34,6 +37,10 @@ func _ready() -> void:
 	areas = _load("area.json").get("areas", {})
 	families = _load("families.json").get("families", {})
 	quests = _load("quests.json").get("quests", [])
+	stations = _load("stations.json").get("stations", {})
+	var proc := _load("process.json")
+	process_verbs = proc.get("verbs", {})
+	process_recipes = proc.get("recipes", [])
 
 
 func resource_name(id: String) -> String:
@@ -52,6 +59,29 @@ func resource_color(id: String) -> String:
 ## 16, tier-1 components to 8, tier-2 components to 4 (set per resource in resources.json).
 func stack_max(id: String) -> int:
 	return maxi(1, int(resources.get(id, {}).get("stack", 1)))
+
+
+## Phase 4: the full recipe a chain makes from `scrap` run through `sequence` (ordered verbs), or {} if
+## none matches. Both scrap type AND the exact verb order must match. Recompute whenever a chain changes.
+func process_recipe(scrap: String, sequence: Array) -> Dictionary:
+	for r: Dictionary in process_recipes:
+		if String(r.get("scrap", "")) == scrap and _seq_match(r.get("sequence", []), sequence):
+			return r
+	return {}
+
+
+## The product id for a chain (scrap + sequence), or "" if no recipe matches.
+func process_product(scrap: String, sequence: Array) -> String:
+	return String(process_recipe(scrap, sequence).get("product", ""))
+
+
+func _seq_match(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in a.size():
+		if String(a[i]) != String(b[i]):
+			return false
+	return true
 
 
 ## Recipes that run on a given machine id (in list order — first satisfied wins).

@@ -4,10 +4,12 @@ extends Control
 ## grid to craft transport parts and storage caches into your stock, then place them
 ## from the factory ([B] build). Pauses the world while open.
 
-const PANEL := Rect2(Vector2(120, 70), Vector2(400, 300))
+const PANEL := Rect2(Vector2(115, 40), Vector2(420, 380))
 const ROW_H := 40.0
-## What the Fabricator can make (cost comes from RunState.part_cost / the def).
-const ITEMS := ["__conveyor", "__splitter", "__filter", "storage_cache"]
+## What the Fabricator can make (cost comes from RunState.part_cost / the def). Transport/caches craft
+## into fungible stock; the support MODULES (Phase 5) craft into the bay's machine-instance storage so
+## you can equip them in the Scrapbot window.
+const ITEMS := ["coolant_module", "medbay_module", "scanner_module"]
 
 var _cursor := 0
 var _message := ""
@@ -71,8 +73,12 @@ func _craft() -> void:
 		_message = "Need %s." % _cost_text(cost)
 		return
 	RunState.spend(cost)
-	RunState.add_to_stock(id)
-	_message = "Crafted %s — now x%d in stock." % [_part_name(id), RunState.stock_count(id)]
+	if _is_bay_module(id):
+		RunState.add_machine_instance(id)  # a shaped bay module → equip it in the Scrapbot window
+		_message = "Fabricated %s — equip it in the bay ([I])." % _part_name(id)
+	else:
+		RunState.add_to_stock(id)
+		_message = "Crafted %s — now x%d in stock." % [_part_name(id), RunState.stock_count(id)]
 
 
 func _draw() -> void:
@@ -87,7 +93,7 @@ func _draw() -> void:
 			draw_rect(Rect2(PANEL.position.x + 8, y - 4, PANEL.size.x - 16, ROW_H - 4), Color(1, 1, 1, 0.10))
 		var afford := RunState.can_afford(RunState.part_cost(id))
 		var name_col := Color(0.92, 0.92, 0.96) if afford else Color(1, 0.6, 0.6)
-		draw_string(_font, Vector2(PANEL.position.x + 16, y + 14), "%s   (have x%d)" % [_part_name(id), RunState.stock_count(id)], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, name_col)
+		draw_string(_font, Vector2(PANEL.position.x + 16, y + 14), "%s   (have x%d)" % [_part_name(id), _have(id)], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, name_col)
 		draw_string(_font, Vector2(PANEL.position.x + 16, y + 30), "cost: %s" % _cost_text(RunState.part_cost(id)), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.7, 0.8, 0.7) if afford else Color(0.85, 0.55, 0.55))
 
 	if _message != "":
@@ -104,6 +110,22 @@ func _part_name(id: String) -> String:
 		"__filter":
 			return "Filter"
 	return String(GameData.machines.get(id, {}).get("name", id))
+
+
+func _is_bay_module(id: String) -> bool:
+	return bool(GameData.machines.get(id, {}).get("bay", false))
+
+
+## How many of this part/module you already have (stock for fungible parts, equippable instances for
+## bay modules).
+func _have(id: String) -> int:
+	if _is_bay_module(id):
+		var n := 0
+		for inst: Dictionary in RunState.machine_instances:
+			if String(inst.get("def_id", "")) == id:
+				n += 1
+		return n
+	return RunState.stock_count(id)
 
 
 func _cost_text(cost: Dictionary) -> String:

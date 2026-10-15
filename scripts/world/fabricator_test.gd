@@ -1,30 +1,42 @@
 extends Node
-## The Fabricator crafts transport parts and caches from resources into stock.
+## The Fabricator crafts SUPPORT MODULES (Phase 4 economy swap: transport parts + caches retired).
+## Each module costs base chain products and lands in the bay-module instance storage, ready to equip.
 
 func _ready() -> void:
 	var fails := 0
 	RunState.factory = FactoryGrid.new(6, 6)
-	RunState.machine_stock = {}
+	RunState.machine_instances = []
 	var fp := FabricatorPanel.new()
 	add_child(fp)
-	# Transport parts are free to craft now (inserts/transport cost nothing).
+
+	# Coolant Vent (index 0) costs copper_sheet 2 + plastic_casing 1 — can't craft it broke.
 	fp._cursor = 0
 	fp._craft()
-	fails += _ck(RunState.stock_count("__conveyor") == 1, "crafting a free conveyor adds it to stock")
-	fp._cursor = 2  # filter — also free
+	fails += _ck(_instances("coolant_module") == 0, "can't craft a module without the products")
+
+	# With the products in the inventory, crafting adds an equippable instance and spends them.
+	RunState.add("copper_sheet", 2)
+	RunState.add("plastic_casing", 1)
 	fp._craft()
-	fails += _ck(RunState.stock_count("__filter") == 1, "crafting a free filter adds it to stock")
-	# A storage cache costs refined copper (3).
-	RunState.add("copper", 3)  # into the grid
-	fp._cursor = 3  # storage cache
+	fails += _ck(_instances("coolant_module") == 1, "crafting a module adds a bay-module instance")
+	fails += _ck(RunState.get_quantity("copper_sheet") == 0 and RunState.get_quantity("plastic_casing") == 0, "the product cost was spent")
+
+	# Can't craft a second with nothing left.
 	fp._craft()
-	fails += _ck(RunState.stock_count("storage_cache") == 1 and RunState.get_quantity("copper") == 0, "cache crafted, copper spent")
-	# Can't craft another cache with no copper left.
-	fp._craft()
-	fails += _ck(RunState.stock_count("storage_cache") == 1, "can't craft a cache with no resources")
+	fails += _ck(_instances("coolant_module") == 1, "can't craft another with no products")
+
 	if fails == 0: print("FABRICATOR_TEST: ALL PASS")
 	else: printerr("FABRICATOR_TEST: %d FAIL" % fails)
 	get_tree().quit(fails)
+
+
+func _instances(def_id: String) -> int:
+	var n := 0
+	for inst: Dictionary in RunState.machine_instances:
+		if String(inst.get("def_id", "")) == def_id:
+			n += 1
+	return n
+
 
 func _ck(c: bool, l: String) -> int:
 	if c: print("  ok: ", l); return 0

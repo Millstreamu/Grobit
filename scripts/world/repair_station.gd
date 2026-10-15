@@ -46,17 +46,9 @@ func _grant_reward() -> void:
 			if player != null and player.combat != null:
 				player.combat.enable_aegis()
 			_notify("Repaired: Aegis Rounds — a 1s shield every 3 shots.")
-		"ability":
-			var ability_id := RunState.first_locked_ability()
-			if ability_id.is_empty():
-				_grant_max_health(player)
-				return
-			RunState.unlock_ability(ability_id)
-			_notify("Repaired: unlocked %s! Choose your ability." % String(GameData.abilities[ability_id].get("name", ability_id)))
-			for hud: Node in get_tree().get_nodes_in_group("hud"):
-				if hud.has_method("open_ability_choice"):
-					hud.open_ability_choice()
 		_:
+			# Field abilities were retired (they come from bay modules now — Phase 5), so the old
+			# "ability" reward just grants max health until the module-reward pass replaces it.
 			_grant_max_health(player)
 
 

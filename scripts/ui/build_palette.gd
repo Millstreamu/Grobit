@@ -62,7 +62,8 @@ func _draw() -> void:
 
 
 func _draw_card(index: int, id: String, rect: Rect2) -> void:
-	var def: Dictionary = GameData.buildables.get(id, {})
+	# A card id is either a lair station (Phase 1) or a field buildable; prefer the station def.
+	var def: Dictionary = GameData.stations[id] if GameData.stations.has(id) else GameData.buildables.get(id, {})
 	var cost: Dictionary = def.get("cost", {})
 	var affordable := RunState.can_afford(cost)
 	var selected := index == _build.selected_index()

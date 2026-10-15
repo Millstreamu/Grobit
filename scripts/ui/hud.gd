@@ -9,7 +9,6 @@ const RESOURCE_ORDER := ["copper_scrap", "steel_scrap", "plastic_scrap", "cerami
 
 var _player: GrobitPlayer
 var _combat: PlayerCombat
-var _abilities: GrobitAbilities
 var _build: BuildManager
 
 var _status: Label
@@ -26,11 +25,11 @@ var _factory: FactoryPanel
 var _scrapbot: ScrapbotPanel
 var _exchange: ExchangePanel
 var _terminal: LairPanel
+var _workshop_line: ProcessWorkshopPanel
 var _hack: HackPanel
 var _fabricator: FabricatorPanel
 var _found: FoundMachinePanel
 var _run_info: RunInfoPanel
-var _ability_choice: AbilityChoicePanel
 var _build_palette: BuildPalette
 var _summary_panel: Control
 var _summary_label: Label
@@ -39,7 +38,6 @@ var _summary_label: Label
 func setup(player: GrobitPlayer, build: BuildManager, generator: AreaGenerator) -> void:
 	_player = player
 	_combat = player.get_node("Combat") as PlayerCombat
-	_abilities = player.get_node("Abilities") as GrobitAbilities
 	_build = build
 	_build_palette.setup(build)
 	_minimap = Minimap.new()
@@ -49,16 +47,6 @@ func setup(player: GrobitPlayer, build: BuildManager, generator: AreaGenerator) 
 	if _player.health != null:
 		_player.health.health_changed.connect(_on_health_changed)
 		_on_health_changed(_player.health.health, _player.health.max_health)
-	# No ability chooser at game start any more — you begin in the lair as the goblin. Picking a
-	# run powerup will happen when you commit to a run (hop in the scrapbot); that's a placeholder
-	# for now (see RunController._drive_out). A debug env var can still force one for headless tests.
-	if RunState.equipped_ability.is_empty() and OS.has_environment("GROBIT_DEBUG_ABILITY"):
-		var aid := OS.get_environment("GROBIT_DEBUG_ABILITY")
-		if not GameData.abilities.has(aid) and not RunState.available_abilities.is_empty():
-			aid = RunState.available_abilities[0]
-		RunState.equipped_ability = aid
-		if not aid.is_empty():
-			_abilities.equip(aid)
 
 
 var _last_overflow_msec := 0
@@ -99,14 +87,11 @@ func _process(_delta: float) -> void:
 	if _summary_panel.visible:
 		_summary_label.text = _summary_text()
 	if _minimap != null:
-		_minimap.visible = not (_factory.is_open() or _scrapbot.is_open() or _exchange.is_open() or _terminal.is_open() or _fabricator.is_open() or _found.is_open() or _run_info.is_open() or _ability_choice.is_open() or _hack.is_open())
+		_minimap.visible = not (_factory.is_open() or _scrapbot.is_open() or _exchange.is_open() or _terminal.is_open() or _fabricator.is_open() or _found.is_open() or _run_info.is_open() or _hack.is_open())
 	_handle_toggles()
 
 
 ## Opens the ability chooser mid-run (e.g. after unlocking one by repairing).
-func open_ability_choice() -> void:
-	if _ability_choice != null:
-		_ability_choice.open()
 
 
 
@@ -134,10 +119,31 @@ func open_exchange() -> void:
 		_exchange.open()
 
 
-## Opens the system terminal (called by SystemTerminal.interact()).
-func open_terminal() -> void:
-	if _terminal != null:
-		_terminal.open()
+## Routes a lair STATION's [F] to its focused panel (Phase 1 — replaces the single System Terminal).
+## The `type` is a stations.json id; `panel` in the def decides which window opens.
+func open_station(type: String) -> void:
+	var panel := String(GameData.stations.get(type, {}).get("panel", type))
+	match panel:
+		"factory":
+			open_factory()
+		"process":
+			open_process_workshop()
+		"fabricator":
+			open_fabricator()
+		"exchange":
+			open_exchange()
+		"goblins", "upgrades":
+			if _terminal != null and not _terminal.is_open():
+				_terminal.open_section(panel)
+		"missions":
+			if _terminal != null and not _terminal.is_open():
+				_terminal.open_section("tasks")
+
+
+## Opens the Workshop process-line editor on the live run line (from the Process Line station).
+func open_process_workshop() -> void:
+	if _workshop_line != null and not _workshop_line.is_open():
+		_workshop_line.open(RunState.process_grid)
 
 
 func open_fabricator() -> void:
@@ -163,17 +169,24 @@ func log_message(text: String) -> void:
 		_messages.pop_front()
 
 
+## Guided-first-run nudge (Phase 6): shows `text` once ever for `id`, and only during the first run
+## (MetaState gates + records it). A no-op afterwards.
+func nudge(id: String, text: String) -> void:
+	if MetaState.should_nudge(id):
+		log_message(text)
+
+
 # --------------------------------------------------------------- input ----
 
 func _handle_toggles() -> void:
 	if _hack.is_open():
 		return  # the door-hack minigame owns input while open
-	if _ability_choice.is_open():
-		return  # run-start ability choice owns input until confirmed
 	if _exchange.is_open():
 		return  # the component exchange owns input while open
 	if _terminal.is_open():
 		return  # the system terminal owns input while open
+	if _workshop_line.is_open():
+		return  # the Workshop process-line editor owns input while open (closes itself on [Esc])
 	if _fabricator.is_open():
 		return  # the Fabricator crafting menu owns input while open
 	if _found.is_open():
@@ -186,10 +199,14 @@ func _handle_toggles() -> void:
 		_run_info.open()
 		return
 	if _summary_panel.visible:
+		var controller := get_parent() as RunController
 		if Input.is_action_just_pressed("confirm"):
-			var controller := get_parent() as RunController
 			if controller != null:
 				controller.restart_run()
+			return
+		if Input.is_action_just_pressed("build_cancel"):
+			if controller != null:
+				controller.to_menu()
 			return
 		for i in 4:
 			if Input.is_action_just_pressed("hotbar_%d" % (i + 1)):
@@ -230,7 +247,6 @@ func _locked_tech_ids() -> Array:
 
 func _status_text() -> String:
 	var lines: Array = []
-	lines.append("Ability:  " + _ability_text())
 	lines.append("Weapon:  " + _weapon_text())
 	lines.append("Goal:  " + _goal_text())
 	var _f := RunState.factory
@@ -240,19 +256,14 @@ func _status_text() -> String:
 	lines.append("Resources: " + _resource_line())
 	lines.append("Lair: " + _lair_needs_line())
 	lines.append("[Space] shoot (auto-aim)   [Tab] switch target   [F] interact")
-	lines.append("[I] factory (place/combine/scrap machines)   [F] interact/scrap   [P] run info")
+	if not RunState.driving:
+		lines.append("[F] use a station   [B] build / move / remove lair stations   [I] scrapbot   [P] run info")
+	else:
+		lines.append("[I] scrapbot (bay / hold / crew)   [F] interact/scrap   [P] run info")
 	for msg: Dictionary in _messages:
 		lines.append("> " + String(msg.text))
 	return "\n".join(lines)
 
-
-func _ability_text() -> String:
-	var equipped := _abilities.equipped_id()
-	if equipped.is_empty():
-		return "Ability: —"
-	if _abilities.is_ready():
-		return "%s: ready" % _abilities.equipped_name()
-	return "%s: %d%%" % [_abilities.equipped_name(), int((1.0 - _abilities.cooldown_ratio()) * 100.0)]
 
 
 ## Weapon family + ammo count (red when out — the run may lack a matching Ammo Maker).
@@ -314,7 +325,7 @@ func _tip_text() -> String:
 				break
 	if not has_scrap:
 		return "park the bot in a room and press [E] to deploy goblins — they strip scrap their tool can handle"
-	return "open the factory [I]: place a scrap inserter to route a scrap type to a recycler, build recyclers/ammo makers + a weapon, then return to the start [F] to extract"
+	return "at the lair: [F] the Process Line to chain scrap into products (base goods, ammo, components), then drive out again or ship components to the lair needs"
 
 
 func _resource_line() -> String:
@@ -424,34 +435,71 @@ func _summary_text() -> String:
 		_:
 			lines.append("RUN LOST — no respawn beacon remained.")
 	lines.append("")
-	# Lair needs — the meta goal. Components delivered THIS run are flagged.
-	lines.append("Lair needs (deliver components to fix the lair):")
+	# This run at a glance (Phase 0.3) — what the expedition brought back, cost, and uncovered.
+	for line: String in _run_recap_lines():
+		lines.append(line)
+	lines.append("")
+	# Lair needs — the meta goal (one wrapped line). Components delivered THIS run are flagged.
+	var need_parts: Array = []
 	for need: String in MetaState.LAIR_NEEDS:
 		var got: int = int(RunState.needs_delivered.get(need, 0))
-		var flag := "   (+%d this run)" % got if got > 0 else ""
-		lines.append("  %s: %d / %d%s" % [need.capitalize(), MetaState.need_amount(need), MetaState.NEED_MAX, flag])
+		var flag := " (+%d)" % got if got > 0 else ""
+		need_parts.append("%s %d/%d%s" % [need.capitalize(), MetaState.need_amount(need), MetaState.NEED_MAX, flag])
+	lines.append("Lair needs: %s" % ", ".join(need_parts))
 	if not MetaState.beacon_sent:
-		lines.append("  Fill all four, then extract, to send the distress beacon.")
+		lines.append("  (fill all four, then extract, to send the distress beacon)")
 	lines.append("")
-	lines.append("Resources this run:")
+	var res_parts: Array = []
 	for id: String in RESOURCE_ORDER:
+		if id == "tech_data":
+			continue  # folded into the Tech Data line below
 		var qty := RunState.get_quantity(id)
 		if qty > 0:
-			lines.append("  %s: %d" % [GameData.resource_name(id), qty])
+			res_parts.append("%s %d" % [GameData.resource_name(id), qty])
+	lines.append("Resources: %s" % (", ".join(res_parts) if not res_parts.is_empty() else "(none)"))
 	lines.append("")
-	lines.append("Tech Data: %d" % RunState.get_quantity("tech_data"))
+	var td := RunState.get_quantity("tech_data")
 	var locked := _locked_tech_ids()
 	if locked.is_empty():
-		lines.append("All technologies unlocked.")
+		lines.append("Tech Data: %d — all technologies unlocked." % td)
 	else:
-		lines.append("Unlock technology (press number):")
+		lines.append("Tech Data: %d — unlock (press number):" % td)
 		for i in mini(4, locked.size()):
 			var tid: String = locked[i]
 			var def: Dictionary = GameData.tech[tid]
 			lines.append("  [%d] %s (%d) — %s" % [i + 1, String(def.get("name", tid)), int(def.get("cost", 0)), String(def.get("desc", ""))])
 	lines.append("")
-	lines.append("[Enter] start a new run")
+	lines.append("[Enter] start a new run     [Esc] main menu")
 	return "\n".join(lines)
+
+
+## The "This run" recap block for the summary card: haul, losses, discoveries, and Heat survived.
+## Kept compact (2–3 lines) so the whole card still fits the 448px-tall canvas.
+func _run_recap_lines() -> Array:
+	var s := RunState.run_stats
+	var haul: Array = ["hauled %d scrap" % int(s.get("scrap_hauled", 0))]
+	var machines := int(s.get("machines_hauled", 0))
+	if machines > 0:
+		haul.append("%d machine%s" % [machines, "" if machines == 1 else "s"])
+	var peak := float(s.get("heat_peak", 0.0))
+	var lines: Array = ["This run: %s · Peak Heat %d%% (%s)" % [", ".join(haul), int(round(peak / RunState.HEAT_MAX * 100.0)), _heat_peak_label(peak)]]
+	var found := RunState.recipes_discovered_this_run()
+	if not found.is_empty():
+		var names: Array = []
+		for p: String in found:
+			names.append(GameData.resource_name(p))
+		lines.append("  Discovered: %s" % ", ".join(names))
+	var lost: Array = s.get("goblins_lost", [])
+	lines.append("  Goblins lost: %s" % (", ".join(lost) if not lost.is_empty() else "none — all made it home"))
+	return lines
+
+
+func _heat_peak_label(peak: float) -> String:
+	if peak >= RunState.HEAT_FULL_ALERT:
+		return "full alert"
+	if peak >= RunState.HEAT_BOT_THREAT:
+		return "bot threat"
+	return "calm"
 
 
 func show_summary(_result: String, _summary: Dictionary) -> void:
@@ -527,6 +575,10 @@ func _build_ui() -> void:
 	_terminal = LairPanel.new()
 	add_child(_terminal)
 
+	# Workshop process-line editor (Phase 4 chains) — launched from the System Terminal's Workshop tab.
+	_workshop_line = ProcessWorkshopPanel.new()
+	add_child(_workshop_line)
+
 	# Door-hack minigame (opened by a field Door's interact()).
 	_hack = HackPanel.new()
 	add_child(_hack)
@@ -544,16 +596,18 @@ func _build_ui() -> void:
 	add_child(_run_info)
 
 	# Run-start ability chooser (modal), opened from setup().
-	_ability_choice = AbilityChoicePanel.new()
-	add_child(_ability_choice)
 
 	# Non-modal build palette overlay, visible only while build mode is active.
 	_build_palette = BuildPalette.new()
 	add_child(_build_palette)
 
-	# End-of-run summary (center), hidden until the run ends.
-	_summary_panel = _make_panel(Vector2(120, 60), Vector2(420, 340))
-	_summary_label = _make_label(Vector2(14, 12), 400)
+	# End-of-run summary (center), hidden until the run ends. Sized + a smaller font so the full card
+	# (result · run recap · lair needs · resources · tech unlocks · [Enter]) fits the 448px canvas (0.3).
+	_summary_panel = _make_panel(Vector2(70, 10), Vector2(500, 432))
+	_summary_label = _make_label(Vector2(12, 8), 476)
+	_summary_label.add_theme_font_size_override("font_size", 13)
+	_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD  # long lines (resources) wrap instead of clipping
+	_summary_label.size = Vector2(476, 0)
 	_summary_panel.add_child(_summary_label)
 	_summary_panel.visible = false
 

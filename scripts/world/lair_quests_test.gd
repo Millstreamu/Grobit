@@ -21,10 +21,13 @@ func _ready() -> void:
 	_ck(MetaState.quest_current(grow.get("goal", {})) == 3, "colony progress reads the roster (3)")
 	_ck(not MetaState.quest_done(grow), "full_colony is not done at 3/6")
 
-	# Fill the colony → the quest completes.
-	RunState.add("tech_data", 9999)
-	while MetaState.can_recruit():
-		MetaState.recruit()
+	# Fill the colony → the quest completes. Recruiting costs FOOD (not Tech Data); add enough food for
+	# the climb (9+12+15 to go 3→6) plus a little Tech Data for the reward check below. Keep both modest
+	# so they fit the inventory grid (over-filling one resource would crowd out the other).
+	RunState.add("tech_data", 20)
+	RunState.add("food", 120)
+	while MetaState.can_recruit() and MetaState.recruit():
+		pass
 	_ck(MetaState.quest_done(grow), "full_colony is done once the colony is at max")
 
 	# Claiming grants the reward once and only once.

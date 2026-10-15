@@ -1,26 +1,22 @@
 class_name LairPanel
 extends Control
-## The LAIR WINDOW — opened by interacting with the System Terminal at base. The single hub for
-## running the colony between runs. Three tabs:
-##   • PRODUCTION — the workshop floor (an embedded FactoryPanel): lay out and run the refiners
-##     and component makers. Refining only happens here at the lair.
-##   • GOBLINS   — the colony roster: recruit, equip found tools / upgrade a goblin's tool, and
-##     the memorial for the fallen.
-##   • TASKS     — colony quests (claim rewards), permanent Upgrades & tech (spend Tech Data), and
-##     the lair-restoration goal (oxygen/power/water/food → the beacon = the win).
+## The COLONY STATION PANEL (Phase 1). The old single System Terminal is retired; the lair is now built
+## from separate stations (see LairStation), and this one panel renders the three colony SECTIONS, each
+## opened LOCKED to one section by its own station:
+##   • GOBLINS  (Goblin Quarters) — recruit, equip found tools / upgrade a goblin's tool, the memorial.
+##   • TASKS    (Mission Board)    — colony quests (claim rewards) + the lair-restoration goal.
+##   • UPGRADES (Upgrade Bench)    — permanent machine/tech/cargo upgrades (spend Tech Data + materials).
+## (Production and the process line are their own stations → FactoryPanel / ProcessWorkshopPanel.)
 ## Pauses the world while open. Tech Data is a grid inventory item, spent from the run inventory.
 
 const PANEL := Vector2(640, 448)
 const BODY_TOP := 92.0
 const ROW_H := 22.0
 
-## Machine types you can permanently upgrade (mirrors the old terminal list).
-const UPGRADABLE := [
-	"copper_recycler", "steel_recycler", "plastic_recycler", "ceramic_recycler",
-	"copper_ammo_maker", "steel_ammo_maker", "plastic_ammo_maker", "ceramic_ammo_maker",
-	"coupling_maker", "control_maker", "frame_maker", "thermal_maker",
-	"copper_weapon", "steel_weapon", "plastic_weapon", "ceramic_weapon",
-]
+## Machine types you can permanently upgrade. Phase 4 economy swap retired the recycler/maker factory,
+## so the Upgrade Bench is now Tech + cargo only (no placeable production machines to level up). Weapons
+## could be re-added here as a bay-module upgrade later.
+const UPGRADABLE := []
 
 const NEED_COLOR := {
 	"oxygen": Color(0.45, 0.85, 1.0),
@@ -29,17 +25,17 @@ const NEED_COLOR := {
 	"food": Color(0.55, 0.9, 0.55),
 }
 
-enum { TAB_PROD, TAB_GOB, TAB_TASK, TAB_UPG }
-const TAB_NAMES := ["Production", "Goblins", "Tasks", "Upgrades"]
+## The colony sections this panel can render, each opened by its own station.
+const SECTIONS := ["goblins", "tasks", "upgrades"]
+const SECTION_TITLES := {"goblins": "GOBLIN QUARTERS", "tasks": "MISSION BOARD", "upgrades": "UPGRADE BENCH"}
 
-var _tab := TAB_PROD
-var _gi := 0          # selected row on the Goblins tab (0 = recruit, then one per goblin)
-var _ti := 0          # selected quest on the Tasks tab
-var _ui := 0          # selected row on the Upgrades tab
+var _section := "goblins"
+var _gi := 0          # selected row in the Goblins section (0 = recruit, then one per goblin)
+var _ti := 0          # selected quest in the Tasks section
+var _ui := 0          # selected row in the Upgrades section
 var _message := ""
 var _opened_frame := -1
 var _font: Font
-var _workshop: FactoryPanel
 
 
 func _ready() -> void:
@@ -49,85 +45,55 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = false
 	_font = ThemeDB.fallback_font
-	# The embedded workshop renders the Production tab. It lives as our child so it draws on top
-	# of our header (its grid sits below the tab strip), sharing RunState.factory with the game.
-	_workshop = FactoryPanel.new()
-	_workshop.embedded = true
-	add_child(_workshop)
-	_workshop.visible = false
 
 
 func is_open() -> bool:
 	return visible
 
 
-func open() -> void:
+## Opens the panel LOCKED to one colony section ("goblins" / "tasks" / "upgrades"), as launched by that
+## section's station. No tab strip — each station is its own focused view.
+func open_section(section: String) -> void:
 	if visible:
 		return
-	_tab = TAB_PROD
+	_section = section if SECTIONS.has(section) else "goblins"
 	_gi = 0
 	_ti = 0
+	_ui = 0
 	_message = ""
 	_opened_frame = Engine.get_process_frames()
 	visible = true
 	get_tree().paused = true
-	_workshop.open()               # resets its state; embedded → doesn't pause
-	_enter_tab(TAB_PROD)
 	queue_redraw()
 
 
 func close() -> void:
-	_workshop.visible = false
 	visible = false
 	get_tree().paused = false
 
 
-func _enter_tab(tab: int) -> void:
-	_tab = tab
-	_message = ""
-	if tab == TAB_PROD:
-		_workshop.visible = true
-		_workshop.embedded_refresh()
-	else:
-		_workshop.visible = false
-
-
-func _cycle_tab() -> void:
-	_enter_tab((_tab + 1) % TAB_NAMES.size())
-
-
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if not visible:
 		return
 	if Engine.get_process_frames() == _opened_frame:
 		return  # swallow the keypress that opened us
-	var on_prod := _tab == TAB_PROD
-	var top_level := (not on_prod) or _workshop.at_top_level()
-	# [Tab] cycles tabs and [Esc] closes — but only when the workshop isn't mid-placement, so a
-	# sub-mode's own [Esc]/[Tab] handling still works on the Production tab.
-	if top_level and Input.is_action_just_pressed("cycle_target"):
-		_cycle_tab()
-		queue_redraw()
-		return
-	if top_level and Input.is_action_just_pressed("build_cancel"):
+	if Input.is_action_just_pressed("build_cancel"):
 		close()
 		return
-	if on_prod:
-		_workshop.embedded_tick(delta)   # the workshop drives its own grid input + redraw
-	else:
-		_handle_list_input()
-		queue_redraw()
+	_handle_list_input()
+	queue_redraw()
 
 
 # ------------------------------------------------------------------ input ----
 
 func _handle_list_input() -> void:
-	if _tab == TAB_GOB:
-		_handle_goblins_input()
-	elif _tab == TAB_TASK:
-		_handle_tasks_input()
-	else:
-		_handle_upgrades_input()
+	match _section:
+		"goblins":
+			_handle_goblins_input()
+		"tasks":
+			_handle_tasks_input()
+		"upgrades":
+			_handle_upgrades_input()
 
 
 func _handle_goblins_input() -> void:
@@ -196,7 +162,7 @@ func _improve_goblin(who: String) -> void:
 		if current >= 4:
 			_message = "%s's tool is already at max tier (ceramic)." % who
 		else:
-			_message = "Unlock %s toolsmithing (Tech Data) before upgrading past tier %d." % [MetaState.TIER_MATERIAL[current], current]
+			_message = "Unlock %s toolsmithing (Tech Data) before upgrading past tier %d." % [GameData.resource_name(MetaState.TIER_MATERIAL[current]), current]
 		return
 	if not RunState.can_afford(cost):
 		_message = "Upgrading %s's tool needs %s (refine more scrap first)." % [who, _cost_text(cost)]
@@ -293,37 +259,25 @@ func _quest_by_id(id: String) -> Dictionary:
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, PANEL), Color(0.05, 0.055, 0.09, 0.98))
 	_draw_header()
-	match _tab:
-		TAB_PROD:
-			pass  # the embedded workshop (our child) paints the Production tab itself
-		TAB_GOB:
+	match _section:
+		"goblins":
 			_draw_goblins()
-			_draw_footer("[WASD] pick   [Space] recruit / improve tool   [Tab] switch tab   [Esc] close")
-		TAB_TASK:
+			_draw_footer("[WASD] pick   [Space] recruit / improve tool   [Esc] close")
+		"tasks":
 			_draw_tasks()
-			_draw_footer("[W/S] pick   [Space] claim reward   [Tab] switch tab   [Esc] close")
-		TAB_UPG:
+			_draw_footer("[W/S] pick   [Space] claim reward   [Esc] close")
+		"upgrades":
 			_draw_upgrades()
-			_draw_footer("[W/S] pick   [Space] buy upgrade   [Tab] switch tab   [Esc] close")
+			_draw_footer("[W/S] pick   [Space] buy upgrade   [Esc] close")
 
 
 func _draw_header() -> void:
-	draw_string(_font, Vector2(14, 28), "SYSTEM TERMINAL", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.55, 0.8, 1.0))
+	draw_string(_font, Vector2(14, 28), String(SECTION_TITLES.get(_section, "COLONY")), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.55, 0.8, 1.0))
 	# Shared counters, right-aligned (Food = recruiting, Tech Data = unlocks).
 	var td := MetaState.tech_data_on_hand()
 	var food := RunState.get_quantity("food")
 	var counters := "Food %d    Tech Data %d    Colony %d/%d    Lost %d" % [food, td, MetaState.colony_size(), MetaState.COLONY_MAX, MetaState.fallen.size()]
 	draw_string(_font, Vector2(PANEL.x - 430, 26), counters, HORIZONTAL_ALIGNMENT_RIGHT, 416, 13, Color(0.82, 0.88, 0.96))
-	# Tab strip (laid out left-to-right by label width so 4 tabs fit cleanly).
-	var tx := 20.0
-	for i in TAB_NAMES.size():
-		var active := i == _tab
-		var col := Color(0.6, 0.82, 1.0) if active else Color(0.55, 0.58, 0.66)
-		draw_string(_font, Vector2(tx, 70), TAB_NAMES[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, col)
-		var w := _font.get_string_size(TAB_NAMES[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
-		if active:
-			draw_line(Vector2(tx, 76), Vector2(tx + w, 76), Color(0.35, 0.6, 0.9), 2.0)
-		tx += w + 34.0
 	draw_line(Vector2(0, 80), Vector2(PANEL.x, 80), Color(0.16, 0.18, 0.24), 1.0)
 
 
@@ -416,7 +370,7 @@ func _draw_tasks() -> void:
 		draw_string(_font, Vector2(gx, ny + 6), "Ship components home to fill these.", HORIZONTAL_ALIGNMENT_LEFT, gw, 11, Color(0.6, 0.64, 0.72))
 
 
-# --- Upgrades tab ---
+# --- Upgrades section ---
 
 func _draw_upgrades() -> void:
 	var td := MetaState.tech_data_on_hand()

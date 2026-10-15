@@ -1,6 +1,24 @@
 {
-  "_comment": "Colony quests shown on the lair terminal's Tasks tab. Progress is computed live from MetaState (goal.type/target/key); when done you CLAIM the reward once (tracked in quests_claimed). Rewards grant Tech Data into the run inventory.",
+  "_comment": "Colony quests shown on the Mission Board. Progress is computed live from MetaState (goal.type/target/key); when done you CLAIM the reward once (tracked in quests_claimed). Rewards grant Tech Data into the run inventory. The first three are PHASE-6 intro quests (goal types 'colony'/'stations'/'recipes') that guide a new player and complete early.",
   "quests": [
+    {
+      "id": "intro_recruit",
+      "name": "Settle in — grow the colony to 4 goblins",
+      "goal": { "type": "colony", "target": 4 },
+      "reward": { "tech_data": 2 }
+    },
+    {
+      "id": "intro_build",
+      "name": "Make it yours — build out the lair (3 stations)",
+      "goal": { "type": "stations", "target": 3 },
+      "reward": { "tech_data": 2 }
+    },
+    {
+      "id": "intro_craft",
+      "name": "First product — make something on a Process Line",
+      "goal": { "type": "recipes", "target": 1 },
+      "reward": { "tech_data": 3 }
+    },
     {
       "id": "scout_tools",
       "name": "Find a better tool — get any goblin to tier 2",

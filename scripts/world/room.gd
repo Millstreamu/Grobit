@@ -33,6 +33,7 @@ var enemy_max := 4
 var enemy_id := "basic_enemy"
 var enemy_weights: Dictionary = {}
 var salvage_loot: Array = []
+var scanned := false       # revealed by the Scanner module's Scan ability (Phase 5)
 var hazard_config: Dictionary = {}
 var spawners: Array[Spawner] = []
 var spawner_config: Dictionary = {}
@@ -192,6 +193,19 @@ func _on_body_exited(body: Node) -> void:
 	if not body.is_in_group("player"):
 		return
 	_pending_players.erase(body)
+
+
+## A short, human-readable summary of this room's guaranteed salvage (for the Scan ability). Lists the
+## distinct resources on offer, or a generic note when the room only holds scattered scrap.
+func loot_summary() -> String:
+	if salvage_loot.is_empty():
+		return "scattered scrap only"
+	var names: Array = []
+	for drop: Dictionary in salvage_loot:
+		var n := GameData.resource_name(String(drop.get("resource", "")))
+		if not names.has(n):
+			names.append(n)
+	return ", ".join(names) if not names.is_empty() else "scattered scrap only"
 
 
 ## Spawns the salvage room's guaranteed loot. Called once after the room is built.

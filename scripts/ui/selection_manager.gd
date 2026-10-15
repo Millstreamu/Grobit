@@ -30,6 +30,11 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_update_aim()
 	_update_interactable()
+	# While the squad is deployed, the command cursor owns [F] — don't also fire interactions.
+	var hm := get_tree().get_first_node_in_group("harvest_mode")
+	if hm != null and bool(hm.active):
+		_release_held()
+		return
 	# Central interaction: F acts on the single nearest in-range interactable, so
 	# overlapping interactables never all fire at once. Interactables that define
 	# `hold_interact` (scrap piles) are driven continuously while F is held; the rest

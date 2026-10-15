@@ -15,9 +15,11 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not RunState.run_active:
 		return
-	# The LAIR WORKSHOP (factory) refines only at base — not while driving out on a run.
-	if RunState.factory != null and not RunState.driving:
-		RunState.factory.tick(delta)
+	# Production is the PROCESS LINES now (Phase 4 economy swap) — the old recycler/maker factory is
+	# retired. The factory grid stays only as the base INVENTORY (no machines tick it). A valid, fed
+	# chain consumes scrap from the inventory and drops a finished product back into it, at the lair only.
+	if RunState.process_grid != null and not RunState.driving:
+		RunState.process_grid.tick(delta, RunState)
 	# The MODULE BAY's processors (ammo press, etc.) run ON THE BOT — at base to pre-fill, and in
 	# the field to keep a run going (sustain: ammo/consumables from loaded material). Bay slots are
 	# the limiter on how many processors you can carry. (Weapons fire separately via try_fire_weapon.)

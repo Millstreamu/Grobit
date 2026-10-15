@@ -38,19 +38,24 @@ func _ready() -> void:
 	run_seed = fixed_seed if fixed_seed >= 0 else randi()
 	RunState.begin_run(area_id, run_seed)
 
-	# Persistent factory: carry over the layout you built last run (machines, transport,
-	# modules). begin_run() made a bare grid; replace it with the saved one if there is one.
-	var fresh_factory := not MetaState.has_factory()
-	if not fresh_factory:
+	# Persistent INVENTORY grid: carry over last run's stored items. begin_run() made a bare grid;
+	# replace it with the saved one if there is one. (The old recycler/maker factory is retired — this
+	# grid is now pure storage; production is the process lines below.)
+	if MetaState.has_factory():
 		var saved := MetaState.load_factory()
 		if saved != null:
 			RunState.factory = saved
-	if fresh_factory:
-		_seed_starter_factory()  # first run ever: a Steel Recycler to get the economy going
 	# The module-bay loadout persists too — load the saved one over the empty bay.
 	var saved_bay := MetaState.load_bay()
 	if saved_bay != null:
 		RunState.bay = saved_bay
+	# The PROCESS LINES (production) persist the same way — carry over the layout you laid, or seed a
+	# starter line on a brand-new game so run 1 can already make a product.
+	var saved_line := MetaState.load_process()
+	if saved_line != null:
+		RunState.process_grid = saved_line
+	elif not MetaState.has_process_line():
+		_seed_starter_line()
 
 	generator = AreaGenerator.new()
 	generator.name = "Area"
@@ -97,16 +102,9 @@ func _ready() -> void:
 	scrapbot.global_position = scrapbot_pos
 	lighting.add_lamp(scrapbot_pos, 100.0, 1.0, Color(0.7, 1.0, 0.7))
 
-	# The System Terminal lives in the LAIR — all upgrading/recruiting/uploading happens at base,
-	# never out in a run. Place it on a free lair tile away from the scrapbot.
-	if _lair != null:
-		var term_pos: Variant = _lair.claim_nearest_prop_tile(start_position)
-		if term_pos == null:
-			term_pos = _lair.nearest_interior_tile(start_position, [scrapbot_pos])
-		var terminal := SystemTerminal.new()
-		add_child(terminal)
-		terminal.global_position = term_pos
-		lighting.add_lamp(term_pos, 110.0, 1.0, Color(0.6, 0.85, 1.0))
+	# The buildable LAIR STATIONS (Phase 1) replace the single System Terminal — recruiting, upgrading,
+	# the production floor, the Mission Board etc. are each their own station, placed with build mode.
+	_spawn_lair_stations(scrapbot_pos)
 
 	var selection := SelectionManager.new()
 	selection.name = "SelectionManager"
@@ -117,6 +115,10 @@ func _ready() -> void:
 	add_child(hud)
 	hud.setup(player, build_manager, generator)
 	build_manager.message.connect(hud.log_message)
+
+	# Guided first run (Phase 6): a one-time nudge the moment you're stood in the lair.
+	if not RunState.driving and hud.has_method("nudge"):
+		hud.nudge("lair_intro", "This is your lair. [F] a station to use it, [B] to build/move stations. Board the scrapbot to head out.")
 
 	# Harvest mode: park the bot in a room and [E] to pour the colony out to strip it (they haul
 	# scrap back to the bot's arm), [E] again to recall. The siege/defenses come in later slices.
@@ -134,6 +136,46 @@ func _ready() -> void:
 
 	# Report which artwork is still using placeholders (all icons now requested).
 	ContentLibrary.print_missing_report.call_deferred()
+
+
+## Phase 1: rebuild the lair's STATIONS from the saved layout. On a brand-new lair, seeds the free
+## defaults (Workshop + Mission Board) on distinct interior tiles and records them; thereafter every
+## station the player has built is restored at its saved tile. Build mode ([B]) adds/moves/removes them.
+func _spawn_lair_stations(exclude_pos: Vector2) -> void:
+	if _lair == null:
+		return
+	var tsize: float = _lair.tile_size if _lair.tile_size > 0.0 else 32.0
+	if not MetaState.has_lair_stations():
+		# Fresh lair: the free defaults (Process Line + Mission Board). A Debug Lair places EVERY station.
+		var to_place: Array = GameData.stations.keys() if MetaState.debug_pending else ["line", "missions"]
+		var used: Array = [exclude_pos]
+		for stype: String in to_place:
+			var p: Variant = _lair.claim_nearest_prop_tile(start_position)
+			if p == null:
+				p = _lair.nearest_interior_tile(start_position, used)
+			used.append(p)
+			MetaState.add_lair_station(stype, int(floor(p.x / tsize)), int(floor(p.y / tsize)))
+	if MetaState.debug_pending:
+		_debug_stock_inventory()   # drop a materials/food/tech bundle so every system is testable now
+		MetaState.debug_pending = false
+		MetaState.save_game()
+	for s: Dictionary in MetaState.lair_stations:
+		var world := Vector2(int(s.get("x", 0)) * tsize + tsize * 0.5, int(s.get("y", 0)) * tsize + tsize * 0.5)
+		var station := LairStation.new()
+		station.station_type = String(s.get("type", ""))
+		add_child(station)
+		station.global_position = world
+		lighting.add_lamp(world, 110.0, 1.0, Color(0.6, 0.85, 1.0))
+
+
+## Debug Lair: stock the inventory so every station/system can be exercised immediately.
+func _debug_stock_inventory() -> void:
+	for m: String in ["steel", "copper", "plastic", "ceramic"]:
+		RunState.add(m, 30)
+	for s: String in ["steel_scrap", "copper_scrap", "plastic_scrap", "ceramic_scrap"]:
+		RunState.add(s, 20)
+	RunState.add("food", 40)
+	RunState.add("tech_data", 25)
 
 
 # Debug helper (env-gated): spawns one of each enemy type near the start so their
@@ -171,16 +213,16 @@ func _debug_spawn_loot() -> void:
 
 
 ## First-run bootstrap. You start at the bottom of the tech ladder: every goblin carries the
-## tier-1 (steel) tool, and one Steel Recycler is seeded so harvested steel scrap can be refined
-## from the first run. Higher tiers come from better tools found in the field. Only runs when
-## there's no saved factory yet.
-func _seed_starter_factory() -> void:
-	var f := RunState.factory
-	if f == null:
+## tier-1 (steel) tool, and a starter PROCESS LINE is seeded (steel_scrap → Heater → Presser = steel
+## plate) so harvested steel scrap can be refined from the first run. Higher tiers come from better
+## tools found in the field. Only runs on a brand-new game (no saved line yet).
+func _seed_starter_line() -> void:
+	var g := RunState.process_grid
+	if g == null:
 		return
-	var core := Vector2i(3, 2)
-	if f.machine_at(core) < 0 and f.can_place("steel_recycler", core):
-		f.place_machine("steel_recycler", core)
+	g.set_intake(Vector2i(0, 2), Vector2i(1, 0), "steel_scrap")   # steel scrap enters (1,2) going right
+	g.place("heat", Vector2i(1, 2), Vector2i(-1, 0), Vector2i(1, 0))
+	g.place("press", Vector2i(2, 2), Vector2i(-1, 0), Vector2i(1, 0))
 
 
 ## The scrapbot was used: in the lair it opens the SCRAPBOT window (bay / hold / crew squad, and
@@ -218,11 +260,13 @@ func _extract() -> void:
 		var hauled := RunState.cargo.scrap_counts()
 		for sid: String in hauled:
 			RunState.deposit(sid, int(hauled[sid]))
+			RunState.run_stats["scrap_hauled"] = int(RunState.run_stats.get("scrap_hauled", 0)) + int(hauled[sid])
 		for def_id: String in RunState.cargo.machine_list():
 			if def_id.begins_with("__"):
 				RunState.add_to_stock(def_id)
 			else:
 				RunState.add_machine_instance(def_id)
+				RunState.run_stats["machines_hauled"] = int(RunState.run_stats.get("machines_hauled", 0)) + 1
 		RunState.cargo.clear()
 	if f != null:
 		for mi in f.machines.size():
@@ -308,6 +352,8 @@ func _end_run(result: String) -> void:
 	if result != RunState.RESULT_LOST:
 		MetaState.save_factory(RunState.factory)
 		MetaState.save_bay(RunState.bay)
+		MetaState.save_process(RunState.process_grid)
+		MetaState.mark_first_run_done()   # the guide goes quiet after your first successful return
 	if player != null:
 		player.set_input_locked(true)
 	var summary := RunState.end_run(result)
@@ -320,17 +366,22 @@ func restart_run() -> void:
 	get_tree().reload_current_scene()
 
 
-## DEBUG (F9): wipe the persistent factory + storage back to a bare grid (just the seeded Steel
-## Recycler on the next launch), then reload. Useful for testing the loop from a clean slate.
+## Back to the title / main menu (from the end-of-run summary). Autoloads persist, so progress is kept.
+func to_menu() -> void:
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/ui/title.tscn")
+
+
+## DEBUG (F9): wipe the persistent inventory + process line + storage, then reload (a starter line is
+## re-seeded on the next launch). Useful for testing the loop from a clean slate.
 func debug_reset_to_arm() -> void:
-	var g := FactoryGrid.new(RunState.FACTORY_COLS, RunState.FACTORY_ROWS)
-	g.place_machine("steel_recycler", Vector2i(3, 2))
-	MetaState.save_factory(g)            # persist a bare factory with one recycler
-	MetaState.machine_storage.clear()    # empty the lair storage (transport/caches)
+	MetaState.clear_factory()            # bare inventory grid
+	MetaState.process_blob = ""          # drop the process lines (a starter line re-seeds on launch)
+	MetaState.machine_storage.clear()    # empty the lair storage
 	MetaState.machine_instances.clear()  # and the stored machine instances
 	MetaState.lair_needs.clear()         # reset the lair's survival needs + beacon
 	MetaState.beacon_sent = false
 	MetaState.save_game()
 	if hud != null:
-		hud.log_message("DEBUG: factory + storage reset to a bare grid.")
+		hud.log_message("DEBUG: inventory + lines + storage reset.")
 	restart_run()
